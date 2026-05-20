@@ -16,7 +16,7 @@ import (
 
 // 错误定义
 // 注：ErrInsufficientBalance在redeem_service.go中定义
-// 注：ErrDailyLimitExceeded/ErrWeeklyLimitExceeded/ErrMonthlyLimitExceeded在subscription_service.go中定义
+// 注：ErrFiveHourLimitExceeded/ErrDailyLimitExceeded/ErrWeeklyLimitExceeded/ErrMonthlyLimitExceeded在subscription_service.go中定义
 var (
 	ErrSubscriptionInvalid       = infraerrors.Forbidden("SUBSCRIPTION_INVALID", "subscription is invalid or expired")
 	ErrBillingServiceUnavailable = infraerrors.ServiceUnavailable("BILLING_SERVICE_ERROR", "Billing service temporarily unavailable. Please retry later.")
@@ -27,12 +27,13 @@ var (
 
 // subscriptionCacheData 订阅缓存数据结构（内部使用）
 type subscriptionCacheData struct {
-	Status       string
-	ExpiresAt    time.Time
-	DailyUsage   float64
-	WeeklyUsage  float64
-	MonthlyUsage float64
-	Version      int64
+	Status        string
+	ExpiresAt     time.Time
+	FiveHourUsage float64
+	DailyUsage    float64
+	WeeklyUsage   float64
+	MonthlyUsage  float64
+	Version       int64
 }
 
 // 缓存写入任务类型
@@ -420,23 +421,25 @@ func (s *BillingCacheService) GetSubscriptionStatus(ctx context.Context, userID,
 
 func (s *BillingCacheService) convertFromPortsData(data *SubscriptionCacheData) *subscriptionCacheData {
 	return &subscriptionCacheData{
-		Status:       data.Status,
-		ExpiresAt:    data.ExpiresAt,
-		DailyUsage:   data.DailyUsage,
-		WeeklyUsage:  data.WeeklyUsage,
-		MonthlyUsage: data.MonthlyUsage,
-		Version:      data.Version,
+		Status:        data.Status,
+		ExpiresAt:     data.ExpiresAt,
+		FiveHourUsage: data.FiveHourUsage,
+		DailyUsage:    data.DailyUsage,
+		WeeklyUsage:   data.WeeklyUsage,
+		MonthlyUsage:  data.MonthlyUsage,
+		Version:       data.Version,
 	}
 }
 
 func (s *BillingCacheService) convertToPortsData(data *subscriptionCacheData) *SubscriptionCacheData {
 	return &SubscriptionCacheData{
-		Status:       data.Status,
-		ExpiresAt:    data.ExpiresAt,
-		DailyUsage:   data.DailyUsage,
-		WeeklyUsage:  data.WeeklyUsage,
-		MonthlyUsage: data.MonthlyUsage,
-		Version:      data.Version,
+		Status:        data.Status,
+		ExpiresAt:     data.ExpiresAt,
+		FiveHourUsage: data.FiveHourUsage,
+		DailyUsage:    data.DailyUsage,
+		WeeklyUsage:   data.WeeklyUsage,
+		MonthlyUsage:  data.MonthlyUsage,
+		Version:       data.Version,
 	}
 }
 
@@ -448,12 +451,13 @@ func (s *BillingCacheService) getSubscriptionFromDB(ctx context.Context, userID,
 	}
 
 	return &subscriptionCacheData{
-		Status:       sub.Status,
-		ExpiresAt:    sub.ExpiresAt,
-		DailyUsage:   sub.DailyUsageUSD,
-		WeeklyUsage:  sub.WeeklyUsageUSD,
-		MonthlyUsage: sub.MonthlyUsageUSD,
-		Version:      sub.UpdatedAt.Unix(),
+		Status:        sub.Status,
+		ExpiresAt:     sub.ExpiresAt,
+		FiveHourUsage: sub.FiveHourUsageUSD,
+		DailyUsage:    sub.DailyUsageUSD,
+		WeeklyUsage:   sub.WeeklyUsageUSD,
+		MonthlyUsage:  sub.MonthlyUsageUSD,
+		Version:       sub.UpdatedAt.Unix(),
 	}, nil
 }
 
@@ -829,16 +833,39 @@ func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, 
 		return ErrSubscriptionInvalid
 	}
 
+	fiveHourUsage := subData.FiveHourUsage
+	dailyUsage := subData.DailyUsage
+	weeklyUsage := subData.WeeklyUsage
+	monthlyUsage := subData.MonthlyUsage
+	if subscription != nil {
+		if subscription.NeedsFiveHourReset() {
+			fiveHourUsage = 0
+		}
+		if subscription.NeedsDailyReset() {
+			dailyUsage = 0
+		}
+		if subscription.NeedsWeeklyReset() {
+			weeklyUsage = 0
+		}
+		if subscription.NeedsMonthlyReset() {
+			monthlyUsage = 0
+		}
+	}
+
 	// 检查限额（使用传入的Group限额配置）
-	if group.HasDailyLimit() && subData.DailyUsage >= *group.DailyLimitUSD {
+	if group.HasFiveHourLimit() && fiveHourUsage >= *group.FiveHourLimitUSD {
+		return ErrFiveHourLimitExceeded
+	}
+
+	if group.HasDailyLimit() && dailyUsage >= *group.DailyLimitUSD {
 		return ErrDailyLimitExceeded
 	}
 
-	if group.HasWeeklyLimit() && subData.WeeklyUsage >= *group.WeeklyLimitUSD {
+	if group.HasWeeklyLimit() && weeklyUsage >= *group.WeeklyLimitUSD {
 		return ErrWeeklyLimitExceeded
 	}
 
-	if group.HasMonthlyLimit() && subData.MonthlyUsage >= *group.MonthlyLimitUSD {
+	if group.HasMonthlyLimit() && monthlyUsage >= *group.MonthlyLimitUSD {
 		return ErrMonthlyLimitExceeded
 	}
 

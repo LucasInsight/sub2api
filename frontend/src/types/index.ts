@@ -505,6 +505,7 @@ export interface Group {
   is_exclusive: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
+  five_hour_limit_usd: number | null
   daily_limit_usd: number | null
   weekly_limit_usd: number | null
   monthly_limit_usd: number | null
@@ -618,6 +619,7 @@ export interface CreateGroupRequest {
   rate_multiplier?: number
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
+  five_hour_limit_usd?: number | null
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -646,6 +648,7 @@ export interface UpdateGroupRequest {
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
+  five_hour_limit_usd?: number | null
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -1502,9 +1505,11 @@ export interface UserSubscription {
   group_id: number
   status: 'active' | 'expired' | 'revoked'
   starts_at: string
+  five_hour_usage_usd: number
   daily_usage_usd: number
   weekly_usage_usd: number
   monthly_usage_usd: number
+  five_hour_window_start: string | null
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
@@ -1516,6 +1521,32 @@ export interface UserSubscription {
 }
 
 export interface SubscriptionProgress {
+  id: number
+  group_name: string
+  expires_at: string
+  expires_in_days: number
+  five_hour: SubscriptionUsageWindowProgress | null
+  daily: SubscriptionUsageWindowProgress | null
+  weekly: SubscriptionUsageWindowProgress | null
+  monthly: SubscriptionUsageWindowProgress | null
+}
+
+export interface SubscriptionUsageWindowProgress {
+  limit_usd: number
+  used_usd: number
+  remaining_usd: number
+  percentage: number
+  window_start: string
+  resets_at: string
+  resets_in_seconds: number
+}
+
+export interface SubscriptionProgressInfo {
+  subscription: UserSubscription
+  progress: SubscriptionProgress
+}
+
+export interface LegacySubscriptionProgress {
   subscription_id: number
   daily: {
     used: number
