@@ -26,8 +26,46 @@
         </div>
       </div>
 
+      <div
+        v-else-if="registrationOAuthOnlyEnabled && settingsLoaded"
+        class="rounded-xl border p-4"
+        :class="
+          showOAuthLogin
+            ? 'border-primary-100 bg-primary-50/70 dark:border-primary-500/20 dark:bg-primary-500/10'
+            : 'border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-900/20'
+        "
+      >
+        <div class="flex items-start gap-3">
+          <div class="flex-shrink-0">
+            <Icon
+              :name="showOAuthLogin ? 'infoCircle' : 'exclamationCircle'"
+              size="md"
+              :class="
+                showOAuthLogin
+                  ? 'text-primary-600 dark:text-primary-300'
+                  : 'text-amber-500'
+              "
+            />
+          </div>
+          <p
+            class="text-sm"
+            :class="
+              showOAuthLogin
+                ? 'text-primary-900 dark:text-primary-100'
+                : 'text-amber-700 dark:text-amber-400'
+            "
+          >
+            {{
+              showOAuthLogin
+                ? t('auth.oauthOnlyRegistration')
+                : t('auth.oauthOnlyRegistrationNoProvider')
+            }}
+          </p>
+        </div>
+      </div>
+
       <!-- Registration Form -->
-      <form v-else @submit.prevent="handleRegister" class="space-y-5">
+      <form v-if="showEmailRegistrationForm" @submit.prevent="handleRegister" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -193,18 +231,6 @@
           />
         </div>
 
-        <LoginAgreementPrompt
-          v-if="loginAgreementEnabled"
-          :accepted="agreementAccepted"
-          :documents="loginAgreementDocuments"
-          :mode="loginAgreementMode"
-          :updated-at="loginAgreementUpdatedAt"
-          :visible="showAgreementModal"
-          @accept="acceptLoginAgreement"
-          @reject="rejectLoginAgreement"
-          @open="showAgreementModal = true"
-        />
-
         <!-- Submit Button -->
         <button
           type="submit"
@@ -242,6 +268,18 @@
         </button>
 
       </form>
+
+      <LoginAgreementPrompt
+        v-if="loginAgreementEnabled"
+        :accepted="agreementAccepted"
+        :documents="loginAgreementDocuments"
+        :mode="loginAgreementMode"
+        :updated-at="loginAgreementUpdatedAt"
+        :visible="showAgreementModal"
+        @accept="acceptLoginAgreement"
+        @reject="rejectLoginAgreement"
+        @open="showAgreementModal = true"
+      />
 
       <div v-if="showOAuthLogin" class="space-y-3 pt-1">
         <div class="flex items-center gap-3">
@@ -347,6 +385,7 @@ const showPassword = ref<boolean>(false)
 
 // Public settings
 const registrationEnabled = ref<boolean>(true)
+const registrationOAuthOnlyEnabled = ref<boolean>(false)
 const emailVerifyEnabled = ref<boolean>(false)
 const promoCodeEnabled = ref<boolean>(true)
 const invitationCodeEnabled = ref<boolean>(false)
@@ -425,6 +464,10 @@ const showOAuthLogin = computed(
     googleOAuthEnabled.value
 )
 
+const showEmailRegistrationForm = computed(
+  () => registrationEnabled.value && !registrationOAuthOnlyEnabled.value
+)
+
 const agreementGateActive = computed(
   () => loginAgreementEnabled.value && !agreementAccepted.value
 )
@@ -455,6 +498,7 @@ onMounted(async () => {
   try {
     const settings = await getPublicSettings()
     registrationEnabled.value = settings.registration_enabled
+    registrationOAuthOnlyEnabled.value = settings.registration_oauth_only_enabled === true
     emailVerifyEnabled.value = settings.email_verify_enabled
     promoCodeEnabled.value = settings.promo_code_enabled
     invitationCodeEnabled.value = settings.invitation_code_enabled

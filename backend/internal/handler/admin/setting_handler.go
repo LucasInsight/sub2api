@@ -120,6 +120,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                    settings.RegistrationEnabled,
+		RegistrationOAuthOnlyEnabled:           settings.RegistrationOAuthOnlyEnabled,
 		EmailVerifyEnabled:                     settings.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:       settings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                       settings.PromoCodeEnabled,
@@ -373,6 +374,7 @@ func loginAgreementDocumentsToService(items []dto.LoginAgreementDocument) []serv
 type UpdateSettingsRequest struct {
 	// 注册设置
 	RegistrationEnabled              bool                         `json:"registration_enabled"`
+	RegistrationOAuthOnlyEnabled     bool                         `json:"registration_oauth_only_enabled"`
 	EmailVerifyEnabled               bool                         `json:"email_verify_enabled"`
 	RegistrationEmailSuffixWhitelist []string                     `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool                         `json:"promo_code_enabled"`
@@ -1433,6 +1435,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	settings := &service.SystemSettings{
 		RegistrationEnabled:                    req.RegistrationEnabled,
+		RegistrationOAuthOnlyEnabled:           req.RegistrationOAuthOnlyEnabled,
 		EmailVerifyEnabled:                     req.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:       req.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                       req.PromoCodeEnabled,
@@ -1847,6 +1850,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                    updatedSettings.RegistrationEnabled,
+		RegistrationOAuthOnlyEnabled:           updatedSettings.RegistrationOAuthOnlyEnabled,
 		EmailVerifyEnabled:                     updatedSettings.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:       updatedSettings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                       updatedSettings.PromoCodeEnabled,
@@ -2081,6 +2085,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	changed := make([]string, 0, 20)
 	if before.RegistrationEnabled != after.RegistrationEnabled {
 		changed = append(changed, "registration_enabled")
+	}
+	if before.RegistrationOAuthOnlyEnabled != after.RegistrationOAuthOnlyEnabled {
+		changed = append(changed, "registration_oauth_only_enabled")
 	}
 	if before.EmailVerifyEnabled != after.EmailVerifyEnabled {
 		changed = append(changed, "email_verify_enabled")

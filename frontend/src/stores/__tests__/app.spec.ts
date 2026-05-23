@@ -298,6 +298,7 @@ describe('useAppStore', () => {
     it('fetchPublicSettings(force) 会同步更新运行时注入配置', async () => {
       vi.mocked(getPublicSettings).mockResolvedValue({
         registration_enabled: false,
+        registration_oauth_only_enabled: false,
         email_verify_enabled: false,
         registration_email_suffix_whitelist: [],
         promo_code_enabled: true,

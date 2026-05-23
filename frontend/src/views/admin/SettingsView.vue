@@ -1381,6 +1381,24 @@
                 <Toggle v-model="form.registration_enabled" />
               </div>
 
+              <!-- OAuth-only Registration -->
+              <div
+                class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+              >
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">{{
+                    t("admin.settings.registration.oauthOnly")
+                  }}</label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.registration.oauthOnlyHint") }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.registration_oauth_only_enabled"
+                  :disabled="!form.registration_enabled"
+                />
+              </div>
+
               <!-- Email Verification -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
@@ -6788,6 +6806,7 @@ type SettingsForm = Omit<
 
 const form = reactive<SettingsForm>({
   registration_enabled: true,
+  registration_oauth_only_enabled: false,
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
@@ -7923,6 +7942,7 @@ async function saveSettings() {
 
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
+      registration_oauth_only_enabled: form.registration_oauth_only_enabled,
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
         registrationEmailSuffixWhitelistTags.value.map(

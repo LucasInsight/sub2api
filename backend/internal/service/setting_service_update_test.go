@@ -213,9 +213,11 @@ func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Normaliz
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		RegistrationOAuthOnlyEnabled:     true,
 		RegistrationEmailSuffixWhitelist: []string{"example.com", "@EXAMPLE.com", " @foo.bar "},
 	})
 	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyRegistrationOAuthOnlyEnabled])
 	require.Equal(t, `["@example.com","@foo.bar"]`, repo.updates[SettingKeyRegistrationEmailSuffixWhitelist])
 }
 

@@ -266,8 +266,9 @@ func TestRegisterOAuthEmailAccountKeepsGitHubAndGoogleSignupSource(t *testing.T)
 				&redeemCodeRepoStub{},
 				&refreshTokenCacheStub{},
 				map[string]string{
-					SettingKeyRegistrationEnabled: "true",
-					SettingKeyEmailVerifyEnabled:  "true",
+					SettingKeyRegistrationEnabled:          "true",
+					SettingKeyRegistrationOAuthOnlyEnabled: "true",
+					SettingKeyEmailVerifyEnabled:           "true",
 				},
 				emailCache,
 			)

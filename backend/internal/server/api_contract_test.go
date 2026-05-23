@@ -673,9 +673,10 @@ func TestAPIContracts(t *testing.T) {
 			wantJSON: `{
 				"code": 0,
 				"message": "success",
-				"data": {
-					"registration_enabled": true,
-					"email_verify_enabled": false,
+					"data": {
+						"registration_enabled": true,
+						"registration_oauth_only_enabled": false,
+						"email_verify_enabled": false,
 					"registration_email_suffix_whitelist": [],
 					"promo_code_enabled": true,
 					"password_reset_enabled": false,
@@ -933,9 +934,10 @@ func TestAPIContracts(t *testing.T) {
 			wantJSON: `{
 				"code": 0,
 				"message": "success",
-				"data": {
-					"registration_enabled": true,
-					"email_verify_enabled": false,
+					"data": {
+						"registration_enabled": true,
+						"registration_oauth_only_enabled": false,
+						"email_verify_enabled": false,
 					"registration_email_suffix_whitelist": [],
 					"promo_code_enabled": true,
 					"password_reset_enabled": false,

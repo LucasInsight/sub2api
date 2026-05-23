@@ -235,6 +235,39 @@ func TestAuthService_Register_DisabledByDefault(t *testing.T) {
 	require.ErrorIs(t, err, ErrRegDisabled)
 }
 
+func TestAuthService_Register_OAuthOnlyRejectsEmailRegistration(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:          "true",
+		SettingKeyRegistrationOAuthOnlyEnabled: "true",
+	}, nil)
+
+	_, _, err := service.Register(context.Background(), "user@test.com", "password")
+	require.ErrorIs(t, err, ErrRegistrationOAuthOnly)
+}
+
+func TestAuthService_Register_DisabledTakesPrecedenceOverOAuthOnly(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:          "false",
+		SettingKeyRegistrationOAuthOnlyEnabled: "true",
+	}, nil)
+
+	_, _, err := service.Register(context.Background(), "user@test.com", "password")
+	require.ErrorIs(t, err, ErrRegDisabled)
+}
+
+func TestAuthService_SendVerifyCodeAsync_OAuthOnlyRejectsEmailRegistrationCode(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:          "true",
+		SettingKeyRegistrationOAuthOnlyEnabled: "true",
+	}, nil)
+
+	_, err := service.SendVerifyCodeAsync(context.Background(), "user@test.com")
+	require.ErrorIs(t, err, ErrRegistrationOAuthOnly)
+}
+
 func TestAuthService_Register_EmailVerifyEnabledButServiceNotConfigured(t *testing.T) {
 	repo := &userRepoStub{}
 	// 邮件验证开启但 emailCache 为 nil（emailService 未配置）

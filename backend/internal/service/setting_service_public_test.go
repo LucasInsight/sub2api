@@ -52,6 +52,7 @@ func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixWhitelis
 	repo := &settingPublicRepoStub{
 		values: map[string]string{
 			SettingKeyRegistrationEnabled:              "true",
+			SettingKeyRegistrationOAuthOnlyEnabled:     "true",
 			SettingKeyEmailVerifyEnabled:               "true",
 			SettingKeyRegistrationEmailSuffixWhitelist: `["@EXAMPLE.com"," @foo.bar ","@invalid_domain",""]`,
 		},
@@ -60,6 +61,7 @@ func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixWhitelis
 
 	settings, err := svc.GetPublicSettings(context.Background())
 	require.NoError(t, err)
+	require.True(t, settings.RegistrationOAuthOnlyEnabled)
 	require.Equal(t, []string{"@example.com", "@foo.bar"}, settings.RegistrationEmailSuffixWhitelist)
 }
 

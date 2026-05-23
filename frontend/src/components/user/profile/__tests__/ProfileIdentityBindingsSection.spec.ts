@@ -235,6 +235,7 @@ describe('ProfileIdentityBindingsSection', () => {
     const appStore = useAppStore()
     appStore.cachedPublicSettings = {
       registration_enabled: false,
+      registration_oauth_only_enabled: false,
       email_verify_enabled: false,
       force_email_on_third_party_signup: false,
       registration_email_suffix_whitelist: [],
