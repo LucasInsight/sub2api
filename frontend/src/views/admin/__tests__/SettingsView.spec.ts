@@ -606,6 +606,32 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("hides OAuth-only registration when registration is disabled without clearing its value", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      registration_enabled: true,
+      registration_oauth_only_enabled: true,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.get('[data-testid="registration-enabled-toggle"]').setValue(false);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="registration-oauth-only-toggle"]').exists()).toBe(false);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registration_enabled: false,
+        registration_oauth_only_enabled: true,
+      }),
+    );
+  });
+
   it("submits Anthropic cache TTL injection gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

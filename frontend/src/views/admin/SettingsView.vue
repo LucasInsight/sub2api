@@ -1378,11 +1378,15 @@
                     }}
                   </p>
                 </div>
-                <Toggle v-model="form.registration_enabled" />
+                <Toggle
+                  v-model="form.registration_enabled"
+                  data-testid="registration-enabled-toggle"
+                />
               </div>
 
               <!-- OAuth-only Registration -->
               <div
+                v-if="form.registration_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
               >
                 <div>
@@ -1395,7 +1399,7 @@
                 </div>
                 <Toggle
                   v-model="form.registration_oauth_only_enabled"
-                  :disabled="!form.registration_enabled"
+                  data-testid="registration-oauth-only-toggle"
                 />
               </div>
 
