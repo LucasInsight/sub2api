@@ -144,7 +144,7 @@ describe('API Client', () => {
       )
     })
 
-    it('部署与运营合规未确认时广播事件且保留登录态', async () => {
+    it('423 业务错误按普通结构化错误返回且保留登录态', async () => {
       localStorage.setItem('auth_token', 'admin-token')
       const listener = vi.fn()
       window.addEventListener('admin-compliance-required', listener)
@@ -180,12 +180,7 @@ describe('API Client', () => {
         })
       )
 
-      expect(listener).toHaveBeenCalledTimes(1)
-      expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual(
-        expect.objectContaining({
-          version: 'v2026.06.10',
-        })
-      )
+      expect(listener).not.toHaveBeenCalled()
       expect(localStorage.getItem('auth_token')).toBe('admin-token')
 
       window.removeEventListener('admin-compliance-required', listener)
