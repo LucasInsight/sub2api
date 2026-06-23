@@ -214,11 +214,11 @@ func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Normaliz
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		RegistrationOAuthOnlyEnabled:     true,
-		RegistrationEmailSuffixWhitelist: []string{"example.com", "@EXAMPLE.com", " @foo.bar "},
+		RegistrationEmailSuffixWhitelist: []string{"example.com", "@EXAMPLE.com", " @foo.bar ", "*.EDU.CN"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "true", repo.updates[SettingKeyRegistrationOAuthOnlyEnabled])
-	require.Equal(t, `["@example.com","@foo.bar"]`, repo.updates[SettingKeyRegistrationEmailSuffixWhitelist])
+	require.Equal(t, `["@example.com","@foo.bar","*.edu.cn"]`, repo.updates[SettingKeyRegistrationEmailSuffixWhitelist])
 }
 
 func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Invalid(t *testing.T) {
@@ -290,6 +290,30 @@ func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.Equal(t, "1.23.2", repo.updates[SettingKeyAntigravityUserAgentVersion])
+}
+
+func TestSettingService_UpdateSettings_APIKeyACLTrustForwardedIPRefreshesConfig(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	cfg := &config.Config{}
+	svc := NewSettingService(repo, cfg)
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		APIKeyACLTrustForwardedIP: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyAPIKeyACLTrustForwardedIP])
+	require.True(t, cfg.Security.TrustForwardedIPForAPIKeyACL)
+	require.True(t, cfg.TrustForwardedIPForAPIKeyACL())
+}
+
+func TestSettingService_ParseSettings_APIKeyACLTrustForwardedIPFallsBackToConfigWhenMissing(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Security.TrustForwardedIPForAPIKeyACL = true
+	svc := NewSettingService(&settingUpdateRepoStub{}, cfg)
+
+	got := svc.parseSettings(map[string]string{})
+
+	require.True(t, got.APIKeyACLTrustForwardedIP)
 }
 
 func TestSettingService_GetAntigravityUserAgentVersion_Precedence(t *testing.T) {
