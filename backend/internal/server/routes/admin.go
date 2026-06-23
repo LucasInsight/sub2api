@@ -16,12 +16,13 @@ func RegisterAdminRoutes(
 	adminAuth middleware.AdminAuthMiddleware,
 	settingService *service.SettingService,
 ) {
+	_ = settingService
+
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
-	admin.Use(middleware.AdminComplianceGuard(settingService))
 	{
-		// 部署与运营合规确认
-		registerAdminComplianceRoutes(admin, h)
+		// Disabled: deployment and operation compliance acknowledgement.
+		// registerAdminComplianceRoutes(admin, h)
 
 		// 仪表盘
 		registerDashboardRoutes(admin, h)

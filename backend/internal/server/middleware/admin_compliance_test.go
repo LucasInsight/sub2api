@@ -43,7 +43,7 @@ func (r *complianceGuardRepoStub) GetAll(ctx context.Context) (map[string]string
 }
 func (r *complianceGuardRepoStub) Delete(ctx context.Context, key string) error { return nil }
 
-func TestAdminComplianceGuardBlocksAdminRouteWhenMissing(t *testing.T) {
+func TestAdminComplianceGuardAllowsAdminRouteWhenDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewSettingService(&complianceGuardRepoStub{}, &config.Config{})
 	router := gin.New()
@@ -60,11 +60,11 @@ func TestAdminComplianceGuardBlocksAdminRouteWhenMissing(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusLocked, w.Code)
-	require.Contains(t, w.Body.String(), "ADMIN_COMPLIANCE_ACK_REQUIRED")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "ok", w.Body.String())
 }
 
-func TestAdminComplianceGuardBypassesComplianceEndpoint(t *testing.T) {
+func TestAdminComplianceGuardAllowsComplianceEndpointWhenDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewSettingService(&complianceGuardRepoStub{}, &config.Config{})
 	router := gin.New()
