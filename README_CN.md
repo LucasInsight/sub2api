@@ -431,6 +431,37 @@ docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
+#### 本地镜像构建与发布
+
+使用 `docker_image.sh` 在本地构建和发布项目镜像。旧的 `build_image.sh`
+入口已经移除，因为新脚本同时覆盖构建和推送流程。
+
+```bash
+# 构建默认 amd64 镜像：
+# xeasydata.cn:5005/sub2api:latest
+./docker_image.sh
+
+# 构建并推送默认镜像
+docker login xeasydata.cn:5005
+./docker_image.sh --push
+
+# 推送已经在本地构建好的镜像
+./docker_image.sh --push-only
+
+# 构建并推送自定义标签
+./docker_image.sh --image xeasydata.cn:5005/sub2api:dev --push
+
+# 使用 buildx 构建并推送多架构镜像
+./docker_image.sh --platform linux/amd64,linux/arm64 --push
+
+# 只预览 Docker 命令，不真正执行
+./docker_image.sh --dry-run --push
+```
+
+脚本还支持重复传入 `--tag`，以及自定义 `--dockerfile`、`--context`、
+`--target`、`--build-arg`、`--label`、`--no-cache`、`--pull`、`--buildx`
+和 `--load` 等选项。完整参数可执行 `./docker_image.sh --help` 查看。
+
 ---
 
 ### 方式三：源码编译

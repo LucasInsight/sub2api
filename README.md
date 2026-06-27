@@ -416,6 +416,38 @@ docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
+#### Local Image Build and Publish
+
+Use `docker_image.sh` to build and publish project images locally. The old
+`build_image.sh` entrypoint has been retired because the script now covers both
+build and push workflows.
+
+```bash
+# Build the default amd64 image:
+# xeasydata.cn:5005/sub2api:latest
+./docker_image.sh
+
+# Build and push the default image
+docker login xeasydata.cn:5005
+./docker_image.sh --push
+
+# Push an image that was already built locally
+./docker_image.sh --push-only
+
+# Build and push a custom tag
+./docker_image.sh --image xeasydata.cn:5005/sub2api:dev --push
+
+# Build and push a multi-architecture image with buildx
+./docker_image.sh --platform linux/amd64,linux/arm64 --push
+
+# Preview the Docker command without running it
+./docker_image.sh --dry-run --push
+```
+
+The script also supports repeated `--tag`, custom `--dockerfile`, `--context`,
+`--target`, `--build-arg`, `--label`, `--no-cache`, `--pull`, `--buildx`, and
+`--load` options. Run `./docker_image.sh --help` for the full option list.
+
 ---
 
 ### Method 3: Build from Source
