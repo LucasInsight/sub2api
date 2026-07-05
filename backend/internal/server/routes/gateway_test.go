@@ -8,6 +8,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geoip"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -15,12 +16,18 @@ import (
 )
 
 func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
 	groupPlatform := service.PlatformOpenAI
 	if len(platform) > 0 && platform[0] != "" {
 		groupPlatform = platform[0]
+	}
+	return newGatewayRoutesTestRouterWithConfig(groupPlatform, &config.Config{})
+}
+
+func newGatewayRoutesTestRouterWithConfig(groupPlatform string, cfg *config.Config) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
 
 	RegisterGatewayRoutes(
@@ -41,7 +48,7 @@ func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 		nil,
 		nil,
 		nil,
-		&config.Config{},
+		cfg,
 	)
 
 	return router
@@ -193,4 +200,78 @@ func TestGatewayRoutesOpenAICountTokensPathIsRegistered(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 	require.NotEqual(t, http.StatusNotFound, w.Code)
+}
+
+func TestGatewayRoutesCountrySupportBlocksOpenAIEntrypoints(t *testing.T) {
+	restore := servermiddleware.SetCountrySupportLookupForTest(func(ipText string) (geoip.LookupResult, error) {
+		return geoip.LookupResult{IP: ipText, CountryCode: "CN"}, nil
+	})
+	defer restore()
+
+	cfg := &config.Config{}
+	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
+	router := newGatewayRoutesTestRouterWithConfig(service.PlatformOpenAI, cfg)
+
+	for _, path := range []string{
+		"/v1/chat/completions",
+		"/v1/responses",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5"}`))
+		req.RemoteAddr = "8.8.8.8:12345"
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code, "path=%s", path)
+		require.JSONEq(t, `{"error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
+		require.NotContains(t, w.Body.String(), "CN")
+		require.NotContains(t, w.Body.String(), "8.8.8.8")
+	}
+}
+
+func TestGatewayRoutesCountrySupportBlocksAnthropicMessages(t *testing.T) {
+	restore := servermiddleware.SetCountrySupportLookupForTest(func(ipText string) (geoip.LookupResult, error) {
+		return geoip.LookupResult{IP: ipText, CountryCode: "CN"}, nil
+	})
+	defer restore()
+
+	cfg := &config.Config{}
+	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
+	router := newGatewayRoutesTestRouterWithConfig(service.PlatformAnthropic, cfg)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[]}`))
+	req.RemoteAddr = "8.8.8.8:12345"
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
+	require.NotContains(t, w.Body.String(), "CN")
+	require.NotContains(t, w.Body.String(), "8.8.8.8")
+}
+
+func TestGatewayRoutesCountrySupportKeepsGatewayResponsesShape(t *testing.T) {
+	restore := servermiddleware.SetCountrySupportLookupForTest(func(ipText string) (geoip.LookupResult, error) {
+		return geoip.LookupResult{IP: ipText, CountryCode: "CN"}, nil
+	})
+	defer restore()
+
+	cfg := &config.Config{}
+	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
+	router := newGatewayRoutesTestRouterWithConfig(service.PlatformAnthropic, cfg)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"claude-sonnet-4-5","input":"hi"}`))
+	req.RemoteAddr = "8.8.8.8:12345"
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.JSONEq(t, `{"error":{"code":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
+	require.NotContains(t, w.Body.String(), "CN")
+	require.NotContains(t, w.Body.String(), "8.8.8.8")
 }

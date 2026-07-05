@@ -157,12 +157,12 @@ func (h *SettingHandler) GetCurrentIPGeo(c *gin.Context) {
 		return
 	}
 
-	countryCode := effectiveCountryCode(result)
+	countryCode := geoip.EffectiveCountryCode(result)
 	countryKnown := countryCode != ""
 	supported := false
 	status := ipGeoSupportStatusUnknown
 	if countryKnown {
-		supported = !isBlockedCountry(countryCode, h.countrySupport.BlockedCountryCodes)
+		supported = !geoip.IsBlockedCountry(countryCode, h.countrySupport.BlockedCountryCodes)
 		if supported {
 			status = ipGeoSupportStatusSupported
 		} else {
@@ -187,26 +187,6 @@ func (h *SettingHandler) lookupIPGeo(clientIP string) (geoip.LookupResult, error
 		return h.ipGeoLookup(clientIP)
 	}
 	return geoip.Lookup(clientIP)
-}
-
-func effectiveCountryCode(result geoip.LookupResult) string {
-	if result.CountryCode != "" {
-		return result.CountryCode
-	}
-	if result.RegisteredCountryCode != "" {
-		return result.RegisteredCountryCode
-	}
-	return result.RepresentedCountryCode
-}
-
-func isBlockedCountry(countryCode string, blockedCountryCodes []string) bool {
-	countryCode = strings.ToUpper(strings.TrimSpace(countryCode))
-	for _, blocked := range blockedCountryCodes {
-		if countryCode == blocked {
-			return true
-		}
-	}
-	return false
 }
 
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.

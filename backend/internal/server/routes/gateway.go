@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -42,6 +43,16 @@ func RegisterGatewayRoutes(
 	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
+	countrySupportGate := middleware.CountrySupportGate(cfg.Security.CountrySupport, func(c *gin.Context) middleware.GatewayErrorWriter {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/v1/messages") {
+			return middleware.AnthropicErrorWriter
+		}
+		if strings.HasPrefix(path, "/v1/responses") && !isOpenAIResponsesCompatibleGatewayPlatform(c) {
+			return middleware.ResponsesErrorWriter
+		}
+		return middleware.OpenAIErrorWriter
+	})
 	imagesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
@@ -92,6 +103,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.Use(requireGroupAnthropic)
+	gateway.Use(countrySupportGate)
 	{
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
