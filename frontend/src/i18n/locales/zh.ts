@@ -12,10 +12,10 @@ export default {
     goToDashboard: '进入控制台',
     ipNotice: {
       supportedTitle: '访问地区已支持',
-      unsupportedTitle: '访问地区暂不支持',
+      unsupportedTitle: '当前国家/地区不支持使用本服务',
       unknownTitle: '无法判定访问地区',
       meta: 'IP：{ip} · 国家/地区：{country}',
-      blockedAction: '根据服务可用性政策，本平台暂不向该地区提供服务。',
+      blockedAction: '本服务未在该国家/地区提供。',
       supportedDescription: '当前国家/地区支持使用本平台，请确认你的使用行为符合所在地法律法规及上游服务条款。',
       unsupportedDescription: '',
       unknownDescription: '暂无法判定当前 IP 归属，请确认你的使用行为符合所在地法律法规及上游服务条款。',

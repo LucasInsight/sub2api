@@ -50,10 +50,10 @@ const messages: Record<string, string> = {
   'home.footer.allRightsReserved': 'All rights reserved.',
   'home.docs': 'Docs',
   'home.ipNotice.supportedTitle': 'Access region supported',
-  'home.ipNotice.unsupportedTitle': 'Access region not supported',
+  'home.ipNotice.unsupportedTitle': 'This service is not supported in the current country/region',
   'home.ipNotice.unknownTitle': 'Unable to determine access region',
   'home.ipNotice.meta': 'IP: {ip} · Country/region: {country}',
-  'home.ipNotice.blockedAction': 'Based on our service availability policy, this platform is not available in this region.',
+  'home.ipNotice.blockedAction': 'This service is not available in this country/region.',
   'home.ipNotice.supportedDescription': 'This country or region is currently supported.',
   'home.ipNotice.unsupportedDescription': '',
   'home.ipNotice.unknownDescription': 'The current IP country or region cannot be determined.',
@@ -141,10 +141,10 @@ describe('HomeView IP geo notice', () => {
 
     const wrapper = await mountHome()
 
-    expect(wrapper.text()).toContain('Access region not supported')
+    expect(wrapper.text()).toContain('This service is not supported in the current country/region')
     expect(wrapper.text()).toContain('IP: 8.8.8.8 · Country/region: US')
     expect(wrapper.html()).toContain('border-amber-300')
-    expect(wrapper.text()).toContain('Based on our service availability policy')
+    expect(wrapper.text()).toContain('This service is not available in this country/region.')
     expect(wrapper.findAll('[data-to="/login"]')).toHaveLength(0)
   })
 

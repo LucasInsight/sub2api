@@ -29,11 +29,11 @@ const messages: Record<string, string> = {
   'auth.signingIn': 'Signing in',
   'auth.dontHaveAccount': 'No account?',
   'auth.signUp': 'Sign up',
-  'home.ipNotice.unsupportedTitle': 'Access region not supported',
+  'home.ipNotice.unsupportedTitle': 'This service is not supported in the current country/region',
   'home.ipNotice.supportedTitle': 'Access region supported',
   'home.ipNotice.unknownTitle': 'Unable to determine access region',
   'home.ipNotice.meta': 'IP: {ip} · Country/region: {country}',
-  'home.ipNotice.blockedAction': 'Based on our service availability policy, this platform is not available in this region.',
+  'home.ipNotice.blockedAction': 'This service is not available in this country/region.',
   'home.ipNotice.unsupportedDescription': '',
   'home.ipNotice.supportedDescription': 'This country or region is currently supported.',
   'home.ipNotice.unknownDescription': 'The current IP country or region cannot be determined.',
@@ -150,8 +150,8 @@ describe('LoginView IP geo blocking', () => {
 
     const wrapper = await mountLogin()
 
-    expect(wrapper.text()).toContain('Access region not supported')
-    expect(wrapper.text()).toContain('Based on our service availability policy')
+    expect(wrapper.text()).toContain('This service is not supported in the current country/region')
+    expect(wrapper.text()).toContain('This service is not available in this country/region.')
     expect(wrapper.find('.card-glass').exists()).toBe(false)
     expect(wrapper.find('form').exists()).toBe(false)
     expect(wrapper.find('[data-to="/register"]').exists()).toBe(false)
