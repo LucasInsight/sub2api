@@ -114,6 +114,7 @@
           :utilization="usageInfo.five_hour.utilization"
           :resets-at="usageInfo.five_hour.resets_at"
           :window-stats="usageInfo.five_hour.window_stats"
+          :quota-estimate="usageInfo.five_hour.quota_estimate"
           :show-now-when-idle="true"
           color="indigo"
         />
@@ -123,6 +124,7 @@
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
           :window-stats="usageInfo.seven_day.window_stats"
+          :quota-estimate="usageInfo.seven_day.quota_estimate"
           :show-now-when-idle="true"
           color="emerald"
         />
@@ -1213,6 +1215,7 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
 
+  _usageCache.delete(props.account.id)
   requestAutoLoad()
 })
 

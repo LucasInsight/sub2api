@@ -51,6 +51,14 @@
       <span v-if="shouldShowResetTime" class="shrink-0 text-[10px] text-gray-400">
         {{ formatResetTime }}
       </span>
+
+      <span
+        v-if="quotaEstimateLabel"
+        class="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+        :title="quotaEstimateTitle"
+      >
+        {{ quotaEstimateLabel }}
+      </span>
     </div>
   </div>
 </template>
@@ -59,7 +67,7 @@
 import { computed, ref, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import type { WindowStats } from '@/types'
+import type { UsageProgress, WindowStats } from '@/types'
 import { formatCompactNumber } from '@/utils/format'
 
 const props = defineProps<{
@@ -68,6 +76,7 @@ const props = defineProps<{
   resetsAt?: string | null
   color: 'indigo' | 'emerald' | 'purple' | 'amber'
   windowStats?: WindowStats | null
+  quotaEstimate?: UsageProgress['quota_estimate']
   showNowWhenIdle?: boolean
 }>()
 
@@ -193,4 +202,35 @@ const formatUserCost = computed(() => {
   return props.windowStats.user_cost.toFixed(2)
 })
 
+const formatEstimateValue = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) return '0.00'
+  if (value >= 1000) return formatCompactNumber(value)
+  if (value >= 10) return value.toFixed(1)
+  return value.toFixed(2)
+}
+
+const quotaEstimateLabel = computed(() => {
+  const estimate = props.quotaEstimate
+  if (!estimate || estimate.min <= 0 || estimate.max <= 0) return ''
+
+  const min = Math.min(estimate.min, estimate.max)
+  const max = Math.max(estimate.min, estimate.max)
+  if (Math.abs(max - min) < 0.005) {
+    return `Q≈$${formatEstimateValue(max)}`
+  }
+  return `Q≈$${formatEstimateValue(min)}-$${formatEstimateValue(max)}`
+})
+
+const quotaEstimateTitle = computed(() => {
+  const estimate = props.quotaEstimate
+  if (!estimate) return ''
+
+  const parts = [t('usage.quotaEstimateTooltip')]
+  if (estimate.updated_at) {
+    parts.push(t('usage.quotaEstimateUpdatedAt', {
+      time: new Date(estimate.updated_at).toLocaleString()
+    }))
+  }
+  return parts.join('\n')
+})
 </script>

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"strings"
@@ -143,12 +144,19 @@ type WindowStats struct {
 
 // UsageProgress 使用量进度
 type UsageProgress struct {
-	Utilization      float64      `json:"utilization"`            // 使用率百分比 (0-100+，100表示100%)
-	ResetsAt         *time.Time   `json:"resets_at"`              // 重置时间
-	RemainingSeconds int          `json:"remaining_seconds"`      // 距重置剩余秒数
-	WindowStats      *WindowStats `json:"window_stats,omitempty"` // 窗口期统计（从窗口开始到当前的使用量）
-	UsedRequests     int64        `json:"used_requests,omitempty"`
-	LimitRequests    int64        `json:"limit_requests,omitempty"`
+	Utilization      float64        `json:"utilization"`            // 使用率百分比 (0-100+，100表示100%)
+	ResetsAt         *time.Time     `json:"resets_at"`              // 重置时间
+	RemainingSeconds int            `json:"remaining_seconds"`      // 距重置剩余秒数
+	WindowStats      *WindowStats   `json:"window_stats,omitempty"` // 窗口期统计（从窗口开始到当前的使用量）
+	UsedRequests     int64          `json:"used_requests,omitempty"`
+	LimitRequests    int64          `json:"limit_requests,omitempty"`
+	QuotaEstimate    *QuotaEstimate `json:"quota_estimate,omitempty"` // 根据当前窗口成本/使用率推算的总额度范围
+}
+
+type QuotaEstimate struct {
+	Min       float64 `json:"min"`
+	Max       float64 `json:"max"`
+	UpdatedAt string  `json:"updated_at,omitempty"`
 }
 
 // AntigravityModelQuota Antigravity 单个模型的配额信息
@@ -525,24 +533,51 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	}
 
 	if s.usageLogRepo == nil {
+		s.applyCodexQuotaEstimate(ctx, account, usage.FiveHour, "5h", now)
+		s.applyCodexQuotaEstimate(ctx, account, usage.SevenDay, "7d", now)
 		return usage, nil
 	}
 
-	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, now.Add(-5*time.Hour)); err == nil {
+	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.FiveHour, 5*time.Hour, now)); err == nil {
 		if usage.FiveHour == nil {
 			usage.FiveHour = &UsageProgress{Utilization: 0}
 		}
 		usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats)
 	}
+	s.applyCodexQuotaEstimate(ctx, account, usage.FiveHour, "5h", now)
 
-	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, now.Add(-7*24*time.Hour)); err == nil {
+	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.SevenDay, 7*24*time.Hour, now)); err == nil {
 		if usage.SevenDay == nil {
 			usage.SevenDay = &UsageProgress{Utilization: 0}
 		}
 		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
 	}
+	s.applyCodexQuotaEstimate(ctx, account, usage.SevenDay, "7d", now)
 
 	return usage, nil
+}
+
+func (s *AccountUsageService) applyCodexQuotaEstimate(ctx context.Context, account *Account, progress *UsageProgress, window string, now time.Time) {
+	if s == nil || s.accountRepo == nil || account == nil || progress == nil {
+		return
+	}
+
+	estimate, updates := buildCodexQuotaEstimateUpdates(account.Extra, progress, window, now)
+	progress.QuotaEstimate = estimate
+	if len(updates) == 0 {
+		return
+	}
+
+	if account.Extra == nil {
+		account.Extra = make(map[string]any, len(updates))
+	}
+	for k, v := range updates {
+		account.Extra[k] = v
+	}
+
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+		slog.Warn("codex_quota_estimate_update_failed", "account_id", account.ID, "window", window, "error", err)
+	}
 }
 
 func shouldRefreshOpenAICodexSnapshot(account *Account, usage *UsageInfo, now time.Time) bool {
@@ -1118,6 +1153,115 @@ func buildCodexUsageProgressFromExtra(extra map[string]any, window string, now t
 	}
 
 	return progress
+}
+
+func codexWindowStatsStart(progress *UsageProgress, fallbackWindow time.Duration, now time.Time) time.Time {
+	if progress != nil && progress.ResetsAt != nil && now.Before(*progress.ResetsAt) {
+		return progress.ResetsAt.Add(-fallbackWindow)
+	}
+	return now.Add(-fallbackWindow)
+}
+
+func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgress, window string, now time.Time) (*QuotaEstimate, map[string]any) {
+	if progress == nil {
+		return quotaEstimateFromExtra(extra, window), nil
+	}
+
+	estimate := quotaEstimateFromExtra(extra, window)
+	sample, ok := codexQuotaEstimateSample(progress, now)
+	if !ok {
+		return estimate, nil
+	}
+
+	updatedAt := now.UTC().Format(time.RFC3339)
+	if estimate == nil {
+		estimate = &QuotaEstimate{Min: sample, Max: sample, UpdatedAt: updatedAt}
+		return estimate, map[string]any{
+			codexQuotaEstimateMinKey(window):       sample,
+			codexQuotaEstimateMaxKey(window):       sample,
+			codexQuotaEstimateUpdatedAtKey(window): updatedAt,
+		}
+	}
+
+	updates := make(map[string]any)
+	if sample < estimate.Min {
+		estimate.Min = sample
+		updates[codexQuotaEstimateMinKey(window)] = sample
+	}
+	if sample > estimate.Max {
+		estimate.Max = sample
+		updates[codexQuotaEstimateMaxKey(window)] = sample
+	}
+	if len(updates) == 0 {
+		return estimate, nil
+	}
+	estimate.UpdatedAt = updatedAt
+	updates[codexQuotaEstimateUpdatedAtKey(window)] = updatedAt
+	return estimate, updates
+}
+
+func codexQuotaEstimateSample(progress *UsageProgress, now time.Time) (float64, bool) {
+	if progress == nil || progress.WindowStats == nil {
+		return 0, false
+	}
+	if progress.ResetsAt != nil && !now.Before(*progress.ResetsAt) {
+		return 0, false
+	}
+	if progress.Utilization <= 0 || progress.Utilization > 100 {
+		return 0, false
+	}
+	if progress.WindowStats.Cost <= 0 {
+		return 0, false
+	}
+	value := progress.WindowStats.Cost / (progress.Utilization / 100)
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	return roundQuotaEstimate(value), true
+}
+
+func quotaEstimateFromExtra(extra map[string]any, window string) *QuotaEstimate {
+	if len(extra) == 0 {
+		return nil
+	}
+	minValue := parseExtraFloat64(extra[codexQuotaEstimateMinKey(window)])
+	maxValue := parseExtraFloat64(extra[codexQuotaEstimateMaxKey(window)])
+	if minValue <= 0 && maxValue <= 0 {
+		return nil
+	}
+	if minValue <= 0 {
+		minValue = maxValue
+	}
+	if maxValue <= 0 {
+		maxValue = minValue
+	}
+	if minValue > maxValue {
+		minValue, maxValue = maxValue, minValue
+	}
+	estimate := &QuotaEstimate{
+		Min: roundQuotaEstimate(minValue),
+		Max: roundQuotaEstimate(maxValue),
+	}
+	if raw, ok := extra[codexQuotaEstimateUpdatedAtKey(window)]; ok {
+		estimate.UpdatedAt = fmt.Sprint(raw)
+	}
+	return estimate
+}
+
+func codexQuotaEstimateMinKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_min", window)
+}
+
+func codexQuotaEstimateMaxKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_max", window)
+}
+
+func codexQuotaEstimateUpdatedAtKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_updated_at", window)
+}
+
+func roundQuotaEstimate(value float64) float64 {
+	return math.Round(value*10000) / 10000
 }
 
 func (s *AccountUsageService) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.AccountUsageStatsResponse, error) {
