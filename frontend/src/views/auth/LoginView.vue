@@ -1,7 +1,8 @@
 <template>
-  <AuthLayout :hide-card="isUnsupportedRegion">
-    <template v-if="isUnsupportedRegion && currentIPGeo" #notice>
-      <IPGeoAccessNotice :geo="currentIPGeo" />
+  <AuthLayout :hide-card="isIPGeoStatusPending || isUnsupportedRegion">
+    <template v-if="isIPGeoStatusPending || (isUnsupportedRegion && currentIPGeo)" #notice>
+      <IPGeoAccessNotice v-if="isIPGeoStatusPending" pending />
+      <IPGeoAccessNotice v-else-if="currentIPGeo" :geo="currentIPGeo" />
     </template>
 
     <div class="space-y-6">
@@ -15,7 +16,7 @@
         </p>
       </div>
       <!-- Login Form -->
-      <form v-if="!isUnsupportedRegion" @submit.prevent="handleLogin" class="space-y-5">
+      <form v-if="canShowAuthEntry" @submit.prevent="handleLogin" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -177,7 +178,7 @@
     </div>
 
     <!-- Footer -->
-    <template v-if="!backendModeEnabled && !isUnsupportedRegion" #footer>
+    <template v-if="!backendModeEnabled && canShowAuthEntry" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.dontHaveAccount') }}
         <router-link
@@ -233,6 +234,8 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 const {
   currentIPGeo,
+  canShowAuthEntry,
+  isIPGeoStatusPending,
   loading: ipGeoLoading,
   isUnsupportedRegion,
   loadCurrentIPGeoStatus

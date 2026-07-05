@@ -1,7 +1,8 @@
 <template>
-  <AuthLayout :hide-card="isUnsupportedRegion">
-    <template v-if="isUnsupportedRegion && currentIPGeo" #notice>
-      <IPGeoAccessNotice :geo="currentIPGeo" />
+  <AuthLayout :hide-card="isIPGeoStatusPending || isUnsupportedRegion">
+    <template v-if="isIPGeoStatusPending || (isUnsupportedRegion && currentIPGeo)" #notice>
+      <IPGeoAccessNotice v-if="isIPGeoStatusPending" pending />
+      <IPGeoAccessNotice v-else-if="currentIPGeo" :geo="currentIPGeo" />
     </template>
 
     <div class="space-y-6">
@@ -16,7 +17,7 @@
       </div>
       <!-- Registration Disabled Message -->
       <div
-        v-if="!isUnsupportedRegion && !registrationEnabled && settingsLoaded"
+        v-if="canShowAuthEntry && !registrationEnabled && settingsLoaded"
         class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
       >
         <div class="flex items-start gap-3">
@@ -30,7 +31,7 @@
       </div>
 
       <div
-        v-else-if="!isUnsupportedRegion && registrationOAuthOnlyEnabled && settingsLoaded"
+        v-else-if="canShowAuthEntry && registrationOAuthOnlyEnabled && settingsLoaded"
         class="rounded-xl border p-4"
         :class="
           showOAuthLogin
@@ -273,7 +274,7 @@
       </form>
 
       <LoginAgreementPrompt
-        v-if="!isUnsupportedRegion && loginAgreementEnabled"
+        v-if="canShowAuthEntry && loginAgreementEnabled"
         :accepted="agreementAccepted"
         :documents="loginAgreementDocuments"
         :mode="loginAgreementMode"
@@ -324,7 +325,7 @@
     </div>
 
     <!-- Footer -->
-    <template v-if="!isUnsupportedRegion" #footer>
+    <template v-if="canShowAuthEntry" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.alreadyHaveAccount') }}
         <router-link
@@ -383,6 +384,8 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 const {
   currentIPGeo,
+  canShowAuthEntry,
+  isIPGeoStatusPending,
   loading: ipGeoLoading,
   isUnsupportedRegion,
   loadCurrentIPGeoStatus
@@ -469,7 +472,7 @@ const validationToastMessage = computed(() =>
 
 const showOAuthLogin = computed(
   () =>
-    !isUnsupportedRegion.value &&
+    canShowAuthEntry.value &&
     (linuxdoOAuthEnabled.value ||
       wechatOAuthEnabled.value ||
       oidcOAuthEnabled.value ||
@@ -478,7 +481,7 @@ const showOAuthLogin = computed(
 )
 
 const showEmailRegistrationForm = computed(
-  () => !isUnsupportedRegion.value && registrationEnabled.value && !registrationOAuthOnlyEnabled.value
+  () => canShowAuthEntry.value && registrationEnabled.value && !registrationOAuthOnlyEnabled.value
 )
 
 const agreementGateActive = computed(

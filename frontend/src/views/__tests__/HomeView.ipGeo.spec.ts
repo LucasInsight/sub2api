@@ -50,13 +50,15 @@ const messages: Record<string, string> = {
   'home.footer.allRightsReserved': 'All rights reserved.',
   'home.docs': 'Docs',
   'home.ipNotice.supportedTitle': 'Access region supported',
-  'home.ipNotice.unsupportedTitle': 'This service is not supported in the current country/region',
+  'home.ipNotice.unsupportedTitle': 'Unsupported country/region',
   'home.ipNotice.unknownTitle': 'Unable to determine access region',
+  'home.ipNotice.pendingTitle': 'Checking access country/region',
   'home.ipNotice.meta': 'IP: {ip} · Country/region: {country}',
   'home.ipNotice.blockedAction': 'This service is not available in this country/region.',
   'home.ipNotice.supportedDescription': 'This country or region is currently supported.',
   'home.ipNotice.unsupportedDescription': '',
   'home.ipNotice.unknownDescription': 'The current IP country or region cannot be determined.',
+  'home.ipNotice.pendingDescription': 'Please wait while we verify the country/region for your current IP.',
   'home.ipNotice.unknownCountry': 'Unknown'
 }
 
@@ -95,6 +97,10 @@ function makeIPGeo(overrides: Partial<CurrentIPGeo>): CurrentIPGeo {
     support_status: 'supported',
     ...overrides
   }
+}
+
+function pendingIPGeoRequest(): Promise<CurrentIPGeo> {
+  return new Promise(() => undefined)
 }
 
 async function mountHome() {
@@ -136,12 +142,22 @@ describe('HomeView IP geo notice', () => {
     expect(wrapper.findAll('[data-to="/login"]').length).toBeGreaterThan(0)
   })
 
+  it('renders a pending notice and hides login entries while checking the country', async () => {
+    getCurrentIPGeo.mockReturnValue(pendingIPGeoRequest())
+
+    const wrapper = await mountHome()
+
+    expect(wrapper.text()).toContain('Checking access country/region')
+    expect(wrapper.text()).toContain('Please wait while we verify the country/region')
+    expect(wrapper.findAll('[data-to="/login"]')).toHaveLength(0)
+  })
+
   it('renders a warning notice and hides login entries when the country is unsupported', async () => {
     getCurrentIPGeo.mockResolvedValue(makeIPGeo({ supported: false, support_status: 'unsupported' }))
 
     const wrapper = await mountHome()
 
-    expect(wrapper.text()).toContain('This service is not supported in the current country/region')
+    expect(wrapper.text()).toContain('Unsupported country/region')
     expect(wrapper.text()).toContain('IP: 8.8.8.8 · Country/region: US')
     expect(wrapper.html()).toContain('border-amber-300')
     expect(wrapper.text()).toContain('This service is not available in this country/region.')
@@ -163,5 +179,16 @@ describe('HomeView IP geo notice', () => {
     expect(wrapper.text()).toContain('IP: 127.0.0.1 · Country/region: Unknown')
     expect(wrapper.html()).toContain('border-gray-200')
     expect(wrapper.findAll('[data-to="/login"]').length).toBeGreaterThan(0)
+  })
+
+  it('keeps login entries when the region check fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    getCurrentIPGeo.mockRejectedValue(new Error('lookup failed'))
+
+    const wrapper = await mountHome()
+
+    expect(wrapper.text()).not.toContain('Checking access country/region')
+    expect(wrapper.findAll('[data-to="/login"]').length).toBeGreaterThan(0)
+    warnSpy.mockRestore()
   })
 })

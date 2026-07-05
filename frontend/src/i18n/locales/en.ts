@@ -12,13 +12,15 @@ export default {
     goToDashboard: 'Go to Dashboard',
     ipNotice: {
       supportedTitle: 'Access region supported',
-      unsupportedTitle: 'This service is not supported in the current country/region',
+      unsupportedTitle: 'Unsupported country/region',
       unknownTitle: 'Unable to determine access region',
+      pendingTitle: 'Checking access country/region',
       meta: 'IP: {ip} · Country/region: {country}',
       blockedAction: 'This service is not available in this country/region.',
       supportedDescription: 'This country or region is currently supported. Please ensure your usage complies with local laws and upstream service terms.',
       unsupportedDescription: '',
       unknownDescription: 'The current IP country or region cannot be determined. Please ensure your usage complies with local laws and upstream service terms.',
+      pendingDescription: 'Please wait while we verify the country/region for your current IP.',
       unknownCountry: 'Unknown'
     },
     // User-focused value proposition

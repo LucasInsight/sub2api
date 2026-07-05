@@ -29,14 +29,16 @@ const messages: Record<string, string> = {
   'auth.signingIn': 'Signing in',
   'auth.dontHaveAccount': 'No account?',
   'auth.signUp': 'Sign up',
-  'home.ipNotice.unsupportedTitle': 'This service is not supported in the current country/region',
+  'home.ipNotice.unsupportedTitle': 'Unsupported country/region',
   'home.ipNotice.supportedTitle': 'Access region supported',
   'home.ipNotice.unknownTitle': 'Unable to determine access region',
+  'home.ipNotice.pendingTitle': 'Checking access country/region',
   'home.ipNotice.meta': 'IP: {ip} · Country/region: {country}',
   'home.ipNotice.blockedAction': 'This service is not available in this country/region.',
   'home.ipNotice.unsupportedDescription': '',
   'home.ipNotice.supportedDescription': 'This country or region is currently supported.',
   'home.ipNotice.unknownDescription': 'The current IP country or region cannot be determined.',
+  'home.ipNotice.pendingDescription': 'Please wait while we verify the country/region for your current IP.',
   'home.ipNotice.unknownCountry': 'Unknown'
 }
 
@@ -89,6 +91,10 @@ function makeIPGeo(overrides: Partial<CurrentIPGeo>): CurrentIPGeo {
     support_status: 'supported',
     ...overrides
   }
+}
+
+function pendingIPGeoRequest(): Promise<CurrentIPGeo> {
+  return new Promise(() => undefined)
 }
 
 function basePublicSettings() {
@@ -145,12 +151,24 @@ describe('LoginView IP geo blocking', () => {
     getPublicSettings.mockResolvedValue(basePublicSettings())
   })
 
+  it('shows a pending notice and hides login form before the region check completes', async () => {
+    getCurrentIPGeo.mockReturnValue(pendingIPGeoRequest())
+
+    const wrapper = await mountLogin()
+
+    expect(wrapper.text()).toContain('Checking access country/region')
+    expect(wrapper.text()).toContain('Please wait while we verify the country/region')
+    expect(wrapper.find('.card-glass').exists()).toBe(false)
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/register"]').exists()).toBe(false)
+  })
+
   it('hides login form and register link when the region is unsupported', async () => {
     getCurrentIPGeo.mockResolvedValue(makeIPGeo({ supported: false, support_status: 'unsupported' }))
 
     const wrapper = await mountLogin()
 
-    expect(wrapper.text()).toContain('This service is not supported in the current country/region')
+    expect(wrapper.text()).toContain('Unsupported country/region')
     expect(wrapper.text()).toContain('This service is not available in this country/region.')
     expect(wrapper.find('.card-glass').exists()).toBe(false)
     expect(wrapper.find('form').exists()).toBe(false)
@@ -166,5 +184,17 @@ describe('LoginView IP geo blocking', () => {
     expect(wrapper.find('.card-glass').exists()).toBe(true)
     expect(wrapper.find('form').exists()).toBe(true)
     expect(wrapper.find('[data-to="/register"]').exists()).toBe(true)
+  })
+
+  it('keeps login form when the region check fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    getCurrentIPGeo.mockRejectedValue(new Error('lookup failed'))
+
+    const wrapper = await mountLogin()
+
+    expect(wrapper.find('.card-glass').exists()).toBe(true)
+    expect(wrapper.find('form').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/register"]').exists()).toBe(true)
+    warnSpy.mockRestore()
   })
 })

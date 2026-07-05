@@ -139,7 +139,12 @@
             </div>
 
             <IPGeoAccessNotice
-              v-if="shouldShowIPGeoNotice && ipGeoNotice"
+              v-if="isIPGeoStatusPending"
+              pending
+              class="mx-auto mt-6 max-w-xl lg:mx-0"
+            />
+            <IPGeoAccessNotice
+              v-else-if="shouldShowIPGeoNotice && ipGeoNotice"
               :geo="ipGeoNotice"
               class="mx-auto mt-6 max-w-xl lg:mx-0"
             />
@@ -456,10 +461,11 @@ const userInitial = computed(() => {
 
 const {
   currentIPGeo: ipGeoNotice,
-  isUnsupportedRegion,
+  canShowAuthEntry,
+  isIPGeoStatusPending,
   loadCurrentIPGeoStatus
 } = useCurrentIPGeoStatus()
-const authEntryBlocked = computed(() => !isAuthenticated.value && isUnsupportedRegion.value)
+const authEntryBlocked = computed(() => !isAuthenticated.value && !canShowAuthEntry.value)
 const shouldShowIPGeoNotice = computed(() => {
   const status = ipGeoNotice.value?.support_status
   return status === 'unsupported' || status === 'unknown'
