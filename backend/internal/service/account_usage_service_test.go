@@ -279,12 +279,18 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		if estimate.Min != 10 || estimate.Max != 10 {
 			t.Fatalf("estimate = %#v, want min=max=10", estimate)
 		}
+		if estimate.CoverageFrom != 20 || estimate.CoverageTo != 30 {
+			t.Fatalf("estimate coverage = %#v, want 20-30", estimate)
+		}
 		if updates["codex_5h_quota_estimate_min"] != 10.0 || updates["codex_5h_quota_estimate_max"] != 10.0 {
 			t.Fatalf("unexpected updates: %#v", updates)
 		}
+		if updates["codex_5h_quota_estimate_coverage_from"] != 20.0 || updates["codex_5h_quota_estimate_coverage_to"] != 30.0 {
+			t.Fatalf("unexpected coverage updates: %#v", updates)
+		}
 	})
 
-	t.Run("lower sample updates min only", func(t *testing.T) {
+	t.Run("same coverage lower sample updates min only", func(t *testing.T) {
 		progress := &UsageProgress{
 			Utilization: 50,
 			ResetsAt:    &activeReset,
@@ -292,13 +298,18 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		}
 
 		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
-			"codex_7d_quota_estimate_min":        10.0,
-			"codex_7d_quota_estimate_max":        20.0,
-			"codex_7d_quota_estimate_updated_at": "2026-03-16T10:00:00Z",
+			"codex_7d_quota_estimate_min":           10.0,
+			"codex_7d_quota_estimate_max":           20.0,
+			"codex_7d_quota_estimate_updated_at":    "2026-03-16T10:00:00Z",
+			"codex_7d_quota_estimate_coverage_from": 50.0,
+			"codex_7d_quota_estimate_coverage_to":   60.0,
 		}, progress, "7d", now)
 
 		if estimate.Min != 8 || estimate.Max != 20 {
 			t.Fatalf("estimate = %#v, want min=8 max=20", estimate)
+		}
+		if estimate.CoverageFrom != 50 || estimate.CoverageTo != 60 {
+			t.Fatalf("estimate coverage = %#v, want 50-60", estimate)
 		}
 		if updates["codex_7d_quota_estimate_min"] != 8.0 {
 			t.Fatalf("expected min update, got %#v", updates)
@@ -316,8 +327,10 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		}
 
 		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
-			"codex_5h_quota_estimate_min": 10.0,
-			"codex_5h_quota_estimate_max": 20.0,
+			"codex_5h_quota_estimate_min":           10.0,
+			"codex_5h_quota_estimate_max":           20.0,
+			"codex_5h_quota_estimate_coverage_from": 50.0,
+			"codex_5h_quota_estimate_coverage_to":   60.0,
 		}, progress, "5h", now)
 
 		if estimate.Min != 10 || estimate.Max != 20 {
@@ -331,15 +344,19 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 	t.Run("invalid samples are ignored", func(t *testing.T) {
 		cases := []*UsageProgress{
 			{Utilization: 0, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 10}},
+			{Utilization: 1, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 10}},
 			{Utilization: 101, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 10}},
 			{Utilization: 50, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 0}},
+			{Utilization: 5, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 0.1, Requests: 2}},
 			{Utilization: 50, ResetsAt: ptrQuotaEstimateTime(now.Add(-time.Minute)), WindowStats: &WindowStats{Cost: 10}},
 		}
 
 		for _, progress := range cases {
 			estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
-				"codex_5h_quota_estimate_min": 10.0,
-				"codex_5h_quota_estimate_max": 20.0,
+				"codex_5h_quota_estimate_min":           10.0,
+				"codex_5h_quota_estimate_max":           20.0,
+				"codex_5h_quota_estimate_coverage_from": 50.0,
+				"codex_5h_quota_estimate_coverage_to":   60.0,
 			}, progress, "5h", now)
 			if estimate == nil || estimate.Min != 10 || estimate.Max != 20 {
 				t.Fatalf("expected existing estimate, got %#v", estimate)
@@ -347,6 +364,95 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			if len(updates) != 0 {
 				t.Fatalf("expected no updates, got %#v", updates)
 			}
+		}
+	})
+
+	t.Run("minimum coverage boundary initializes warmup range", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 5,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 0.25},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(nil, progress, "5h", now)
+		if estimate == nil || estimate.Min != 5 || estimate.Max != 5 {
+			t.Fatalf("estimate = %#v, want min=max=5", estimate)
+		}
+		if estimate.CoverageFrom != 5 || estimate.CoverageTo != 10 {
+			t.Fatalf("estimate coverage = %#v, want 5-10", estimate)
+		}
+		if updates["codex_5h_quota_estimate_coverage_from"] != 5.0 || updates["codex_5h_quota_estimate_coverage_to"] != 10.0 {
+			t.Fatalf("unexpected updates: %#v", updates)
+		}
+	})
+
+	t.Run("higher coverage resets old range", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 25,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 3},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_5h_quota_estimate_min":           4.0,
+			"codex_5h_quota_estimate_max":           40.0,
+			"codex_5h_quota_estimate_coverage_from": 5.0,
+			"codex_5h_quota_estimate_coverage_to":   10.0,
+		}, progress, "5h", now)
+
+		if estimate.Min != 12 || estimate.Max != 12 {
+			t.Fatalf("estimate = %#v, want reset min=max=12", estimate)
+		}
+		if estimate.CoverageFrom != 20 || estimate.CoverageTo != 30 {
+			t.Fatalf("estimate coverage = %#v, want 20-30", estimate)
+		}
+		if updates["codex_5h_quota_estimate_min"] != 12.0 || updates["codex_5h_quota_estimate_max"] != 12.0 {
+			t.Fatalf("unexpected reset updates: %#v", updates)
+		}
+	})
+
+	t.Run("lower coverage does not replace existing range", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 25,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 3},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_quota_estimate_min":           15.0,
+			"codex_7d_quota_estimate_max":           18.0,
+			"codex_7d_quota_estimate_coverage_from": 50.0,
+			"codex_7d_quota_estimate_coverage_to":   60.0,
+		}, progress, "7d", now)
+
+		if estimate.Min != 15 || estimate.Max != 18 {
+			t.Fatalf("estimate = %#v, want existing range", estimate)
+		}
+		if len(updates) != 0 {
+			t.Fatalf("expected no updates, got %#v", updates)
+		}
+	})
+
+	t.Run("legacy estimate without coverage is rebuilt by next valid sample", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 25,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 3},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_5h_quota_estimate_min": 10.0,
+			"codex_5h_quota_estimate_max": 20.0,
+		}, progress, "5h", now)
+
+		if estimate.Min != 12 || estimate.Max != 12 {
+			t.Fatalf("estimate = %#v, want rebuilt min=max=12", estimate)
+		}
+		if estimate.CoverageFrom != 20 || estimate.CoverageTo != 30 {
+			t.Fatalf("estimate coverage = %#v, want 20-30", estimate)
+		}
+		if updates["codex_5h_quota_estimate_coverage_from"] != 20.0 || updates["codex_5h_quota_estimate_coverage_to"] != 30.0 {
+			t.Fatalf("unexpected coverage updates: %#v", updates)
 		}
 	})
 }
@@ -372,6 +478,9 @@ func TestAccountUsageServiceApplyCodexQuotaEstimateUpdatesExtra(t *testing.T) {
 	}
 	if account.Extra["codex_5h_quota_estimate_min"] != 5.0 {
 		t.Fatalf("account extra not updated: %#v", account.Extra)
+	}
+	if account.Extra["codex_5h_quota_estimate_coverage_from"] != 20.0 || account.Extra["codex_5h_quota_estimate_coverage_to"] != 30.0 {
+		t.Fatalf("account extra coverage not updated: %#v", account.Extra)
 	}
 	if len(repo.updateExtraCalls) != 1 {
 		t.Fatalf("expected one UpdateExtra call, got %d", len(repo.updateExtraCalls))

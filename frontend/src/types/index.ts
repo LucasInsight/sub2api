@@ -971,6 +971,8 @@ export interface UsageProgress {
     min: number
     max: number
     updated_at?: string
+    coverage_from?: number
+    coverage_to?: number
   } | null
 }
 

@@ -7,7 +7,10 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string, params?: Record<string, string>) => {
+        if (!params) return key
+        return `${key} ${Object.values(params).join(' ')}`
+      }
     })
   }
 })
@@ -107,7 +110,9 @@ describe('UsageProgressBar', () => {
         quotaEstimate: {
           min: 12.3456,
           max: 12.3456,
-          updated_at: '2026-03-17T00:00:00Z'
+          updated_at: '2026-03-17T00:00:00Z',
+          coverage_from: 20,
+          coverage_to: 30
         }
       }
     })
@@ -115,7 +120,33 @@ describe('UsageProgressBar', () => {
     expect(wrapper.text()).toContain('Q≈$12.3')
     const badge = wrapper.find('[title*="usage.quotaEstimateTooltip"]')
     expect(badge.exists()).toBe(true)
+    expect(badge.attributes('title')).toContain('usage.quotaEstimateMinMax')
+    expect(badge.attributes('title')).toContain('$12.3456')
+    expect(badge.attributes('title')).toContain('usage.quotaEstimateCoverage')
     expect(badge.attributes('title')).toContain('usage.quotaEstimateUpdatedAt')
+  })
+
+  it('tooltip 中使用完整 quota 估算值，不使用 K 省略', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d',
+        utilization: 85,
+        resetsAt: '2026-03-20T00:00:00Z',
+        color: 'emerald',
+        quotaEstimate: {
+          min: 2488.25,
+          max: 2504.75,
+          coverage_from: 80,
+          coverage_to: 90
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Q≈$2.5K-$2.5K')
+    const badge = wrapper.find('[title*="usage.quotaEstimateTooltip"]')
+    expect(badge.attributes('title')).toContain('$2,488.25')
+    expect(badge.attributes('title')).toContain('$2,504.75')
+    expect(badge.attributes('title')).not.toContain('$2.5K')
   })
 
   it('显示 quota 估算范围', () => {

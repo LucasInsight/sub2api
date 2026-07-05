@@ -213,6 +213,20 @@ const formatEstimateValue = (value: number): string => {
   return value.toFixed(2)
 }
 
+const formatEstimateDetailValue = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) return '0.00'
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  }).format(value)
+}
+
+const formatCoveragePercent = (value: number): string => {
+  if (!Number.isFinite(value)) return '0'
+  if (Number.isInteger(value)) return value.toFixed(0)
+  return value.toFixed(1).replace(/\.0$/, '')
+}
+
 const quotaEstimateLabel = computed(() => {
   const estimate = props.quotaEstimate
   if (!estimate || estimate.min <= 0 || estimate.max <= 0) return ''
@@ -229,7 +243,24 @@ const quotaEstimateTitle = computed(() => {
   const estimate = props.quotaEstimate
   if (!estimate) return ''
 
+  const min = Math.min(estimate.min, estimate.max)
+  const max = Math.max(estimate.min, estimate.max)
   const parts = [t('usage.quotaEstimateTooltip')]
+  parts.push(t('usage.quotaEstimateMinMax', {
+    min: `$${formatEstimateDetailValue(min)}`,
+    max: `$${formatEstimateDetailValue(max)}`
+  }))
+  if (
+    estimate.coverage_from != null &&
+    estimate.coverage_to != null &&
+    estimate.coverage_from > 0 &&
+    estimate.coverage_to > estimate.coverage_from
+  ) {
+    parts.push(t('usage.quotaEstimateCoverage', {
+      from: formatCoveragePercent(estimate.coverage_from),
+      to: formatCoveragePercent(estimate.coverage_to)
+    }))
+  }
   if (estimate.updated_at) {
     parts.push(t('usage.quotaEstimateUpdatedAt', {
       time: new Date(estimate.updated_at).toLocaleString()
