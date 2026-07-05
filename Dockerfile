@@ -10,6 +10,8 @@ ARG NODE_IMAGE=node:24-alpine
 ARG GOLANG_IMAGE=golang:1.26.4-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
+ARG PNPM_VERSION=9.15.9
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
 
@@ -18,15 +20,20 @@ ARG GOSUMDB=sum.golang.google.cn
 # -----------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-builder
 
-WORKDIR /app/frontend
-ENV NODE_OPTIONS=--max-old-space-size=4096
+ARG PNPM_VERSION
+ARG NPM_REGISTRY
 
-# Install pnpm (pinned to v9 to match CI and keep builds reproducible)
-RUN corepack enable && corepack prepare pnpm@9 --activate
+WORKDIR /app/frontend
+ENV NODE_OPTIONS=--max-old-space-size=4096 \
+    npm_config_registry=${NPM_REGISTRY} \
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
+# Install pnpm from a pinned v9 release without Corepack's major-version lookup.
+RUN npm install -g "pnpm@${PNPM_VERSION}" --registry="${NPM_REGISTRY}" && pnpm --version
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --registry="${NPM_REGISTRY}"
 
 # Copy frontend source and build.
 # LegalDocumentView.vue (admin-compliance gate) build-time imports
