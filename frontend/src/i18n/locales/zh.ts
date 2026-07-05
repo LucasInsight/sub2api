@@ -894,6 +894,8 @@ export default {
     accountCost: '成本',
     userBilled: '用户扣费',
     accountBilled: '账号计费',
+    quotaEstimateTooltip: '估算总额度 = 当前窗口账号计费 / 上游使用率。范围来自历史有效样本 min/max。',
+    quotaEstimateUpdatedAt: '更新时间 {time}',
     resetNow: '现在',
     resetPending: '待刷新',
     accountMultiplier: '账号倍率',

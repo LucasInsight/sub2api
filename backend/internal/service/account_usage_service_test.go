@@ -9,16 +9,18 @@ import (
 
 type accountUsageCodexProbeRepo struct {
 	stubOpenAIAccountRepo
-	updateExtraCh chan map[string]any
-	rateLimitCh   chan time.Time
+	updateExtraCh    chan map[string]any
+	updateExtraCalls []map[string]any
+	rateLimitCh      chan time.Time
 }
 
 func (r *accountUsageCodexProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	copied := make(map[string]any, len(updates))
+	for k, v := range updates {
+		copied[k] = v
+	}
+	r.updateExtraCalls = append(r.updateExtraCalls, copied)
 	if r.updateExtraCh != nil {
-		copied := make(map[string]any, len(updates))
-		for k, v := range updates {
-			copied[k] = v
-		}
 		r.updateExtraCh <- copied
 	}
 	return nil
@@ -206,4 +208,127 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 			t.Fatalf("expected Utilization=0 for expired 7d window, got %v", progress.Utilization)
 		}
 	})
+}
+
+func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)
+	activeReset := now.Add(2 * time.Hour)
+
+	t.Run("first valid sample initializes min max", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 25,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 2.5},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(nil, progress, "5h", now)
+		if estimate == nil {
+			t.Fatal("expected estimate")
+		}
+		if estimate.Min != 10 || estimate.Max != 10 {
+			t.Fatalf("estimate = %#v, want min=max=10", estimate)
+		}
+		if updates["codex_5h_quota_estimate_min"] != 10.0 || updates["codex_5h_quota_estimate_max"] != 10.0 {
+			t.Fatalf("unexpected updates: %#v", updates)
+		}
+	})
+
+	t.Run("lower sample updates min only", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 50,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 4},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_quota_estimate_min":        10.0,
+			"codex_7d_quota_estimate_max":        20.0,
+			"codex_7d_quota_estimate_updated_at": "2026-03-16T10:00:00Z",
+		}, progress, "7d", now)
+
+		if estimate.Min != 8 || estimate.Max != 20 {
+			t.Fatalf("estimate = %#v, want min=8 max=20", estimate)
+		}
+		if updates["codex_7d_quota_estimate_min"] != 8.0 {
+			t.Fatalf("expected min update, got %#v", updates)
+		}
+		if _, ok := updates["codex_7d_quota_estimate_max"]; ok {
+			t.Fatalf("did not expect max update: %#v", updates)
+		}
+	})
+
+	t.Run("inside range does not update", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 50,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 7.5},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_5h_quota_estimate_min": 10.0,
+			"codex_5h_quota_estimate_max": 20.0,
+		}, progress, "5h", now)
+
+		if estimate.Min != 10 || estimate.Max != 20 {
+			t.Fatalf("estimate = %#v, want existing range", estimate)
+		}
+		if len(updates) != 0 {
+			t.Fatalf("expected no updates, got %#v", updates)
+		}
+	})
+
+	t.Run("invalid samples are ignored", func(t *testing.T) {
+		cases := []*UsageProgress{
+			{Utilization: 0, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 10}},
+			{Utilization: 101, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 10}},
+			{Utilization: 50, ResetsAt: &activeReset, WindowStats: &WindowStats{Cost: 0}},
+			{Utilization: 50, ResetsAt: ptrQuotaEstimateTime(now.Add(-time.Minute)), WindowStats: &WindowStats{Cost: 10}},
+		}
+
+		for _, progress := range cases {
+			estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+				"codex_5h_quota_estimate_min": 10.0,
+				"codex_5h_quota_estimate_max": 20.0,
+			}, progress, "5h", now)
+			if estimate == nil || estimate.Min != 10 || estimate.Max != 20 {
+				t.Fatalf("expected existing estimate, got %#v", estimate)
+			}
+			if len(updates) != 0 {
+				t.Fatalf("expected no updates, got %#v", updates)
+			}
+		}
+	})
+}
+
+func TestAccountUsageServiceApplyCodexQuotaEstimateUpdatesExtra(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)
+	resetAt := now.Add(time.Hour)
+	repo := &accountUsageCodexProbeRepo{}
+	svc := &AccountUsageService{accountRepo: repo}
+	account := &Account{ID: 44, Extra: map[string]any{}}
+	progress := &UsageProgress{
+		Utilization: 20,
+		ResetsAt:    &resetAt,
+		WindowStats: &WindowStats{Cost: 1},
+	}
+
+	svc.applyCodexQuotaEstimate(context.Background(), account, progress, "5h", now)
+
+	if progress.QuotaEstimate == nil || progress.QuotaEstimate.Min != 5 || progress.QuotaEstimate.Max != 5 {
+		t.Fatalf("progress quota estimate = %#v, want min=max=5", progress.QuotaEstimate)
+	}
+	if account.Extra["codex_5h_quota_estimate_min"] != 5.0 {
+		t.Fatalf("account extra not updated: %#v", account.Extra)
+	}
+	if len(repo.updateExtraCalls) != 1 {
+		t.Fatalf("expected one UpdateExtra call, got %d", len(repo.updateExtraCalls))
+	}
+}
+
+func ptrQuotaEstimateTime(t time.Time) *time.Time {
+	return &t
 }

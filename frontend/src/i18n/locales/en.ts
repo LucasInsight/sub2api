@@ -890,6 +890,8 @@ export default {
     accountCost: 'Cost',
     userBilled: 'User billed',
     accountBilled: 'Account billed',
+    quotaEstimateTooltip: 'Estimated total quota = current window account cost / upstream usage percentage. Range is historical valid sample min/max.',
+    quotaEstimateUpdatedAt: 'Updated at {time}',
     resetNow: 'Now',
     resetPending: 'Pending refresh',
     accountMultiplier: 'Account rate',

@@ -96,4 +96,42 @@ describe('UsageProgressBar', () => {
     expect(wrapper.text()).toContain('usage.resetNow')
     expect(wrapper.text()).not.toContain('usage.resetPending')
   })
+
+  it('显示单点 quota 估算值', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 25,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo',
+        quotaEstimate: {
+          min: 12.3456,
+          max: 12.3456,
+          updated_at: '2026-03-17T00:00:00Z'
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Q≈$12.3')
+    const badge = wrapper.find('[title*="usage.quotaEstimateTooltip"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('title')).toContain('usage.quotaEstimateUpdatedAt')
+  })
+
+  it('显示 quota 估算范围', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d',
+        utilization: 50,
+        resetsAt: '2026-03-20T00:00:00Z',
+        color: 'emerald',
+        quotaEstimate: {
+          min: 8,
+          max: 20
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Q≈$8.00-$20.0')
+  })
 })

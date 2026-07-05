@@ -940,6 +940,11 @@ export interface UsageProgress {
   window_stats?: WindowStats | null // 窗口期统计（从窗口开始到当前的使用量）
   used_requests?: number
   limit_requests?: number
+  quota_estimate?: {
+    min: number
+    max: number
+    updated_at?: string
+  } | null
 }
 
 // Antigravity 单个模型的配额信息
