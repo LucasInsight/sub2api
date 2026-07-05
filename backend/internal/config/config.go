@@ -579,6 +579,7 @@ type SecurityConfig struct {
 	CSP                              CSPConfig            `mapstructure:"csp"`
 	ProxyFallback                    ProxyFallbackConfig  `mapstructure:"proxy_fallback"`
 	ProxyProbe                       ProxyProbeConfig     `mapstructure:"proxy_probe"`
+	CountrySupport                   CountrySupportConfig `mapstructure:"country_support"`
 	TrustForwardedIPForAPIKeyACL     bool                 `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
 	trustForwardedIPForAPIKeyACLLive *atomic.Bool         `mapstructure:"-"`
 }
@@ -613,6 +614,18 @@ type URLAllowlistConfig struct {
 	AllowPrivateHosts bool     `mapstructure:"allow_private_hosts"`
 	// 关闭 URL 白名单校验时，是否允许 http URL（默认只允许 https）
 	AllowInsecureHTTP bool `mapstructure:"allow_insecure_http"`
+}
+
+type CountrySupportConfig struct {
+	BlockedCountryCodes []string `mapstructure:"blocked_country_codes"`
+}
+
+const defaultBlockedCountryCodeCN = "CN"
+
+func DefaultCountrySupportConfig() CountrySupportConfig {
+	return CountrySupportConfig{
+		BlockedCountryCodes: []string{defaultBlockedCountryCodeCN},
+	}
 }
 
 type ResponseHeaderConfig struct {
@@ -1468,6 +1481,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
+	cfg.Security.CountrySupport.BlockedCountryCodes = NormalizeCountryCodes(cfg.Security.CountrySupport.BlockedCountryCodes)
 	cfg.Security.CSP.Policy = strings.TrimSpace(cfg.Security.CSP.Policy)
 	cfg.SetTrustForwardedIPForAPIKeyACL(cfg.Security.TrustForwardedIPForAPIKeyACL)
 	cfg.Log.Level = strings.ToLower(strings.TrimSpace(cfg.Log.Level))
@@ -1614,6 +1628,7 @@ func setDefaults() {
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
+	viper.SetDefault("security.country_support.blocked_country_codes", DefaultCountrySupportConfig().BlockedCountryCodes)
 	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", false)
 
 	// Security - disable direct fallback on proxy error
@@ -2111,6 +2126,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Security.CSP.Enabled && strings.TrimSpace(c.Security.CSP.Policy) == "" {
 		return fmt.Errorf("security.csp.policy is required when CSP is enabled")
+	}
+	for _, code := range c.Security.CountrySupport.BlockedCountryCodes {
+		if !isISOAlpha2CountryCode(code) {
+			return fmt.Errorf("security.country_support.blocked_country_codes contains invalid country code %q", code)
+		}
 	}
 	if c.LinuxDo.Enabled {
 		if strings.TrimSpace(c.LinuxDo.ClientID) == "" {
@@ -2852,6 +2872,38 @@ func normalizeStringSlice(values []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func NormalizeCountryCodes(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, v := range values {
+		code := strings.ToUpper(strings.TrimSpace(v))
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		normalized = append(normalized, code)
+	}
+	return normalized
+}
+
+func isISOAlpha2CountryCode(code string) bool {
+	if len(code) != 2 {
+		return false
+	}
+	for _, r := range code {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func isWeakJWTSecret(secret string) bool {

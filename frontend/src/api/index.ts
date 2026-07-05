@@ -18,6 +18,7 @@ export { paymentAPI } from './payment'
 export { userGroupsAPI } from './groups'
 export { userChannelsAPI } from './channels'
 export { totpAPI } from './totp'
+export { getCurrentIPGeo, type CurrentIPGeo, type IPGeoSupportStatus } from './ipGeo'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
 

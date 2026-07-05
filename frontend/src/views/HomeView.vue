@@ -100,7 +100,7 @@
             </svg>
           </router-link>
           <router-link
-            v-else
+            v-else-if="!authEntryBlocked"
             to="/login"
             class="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
@@ -129,6 +129,7 @@
             <!-- CTA Button -->
             <div>
               <router-link
+                v-if="isAuthenticated || !authEntryBlocked"
                 :to="isAuthenticated ? dashboardPath : '/login'"
                 class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
               >
@@ -136,6 +137,12 @@
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
               </router-link>
             </div>
+
+            <IPGeoAccessNotice
+              v-if="shouldShowIPGeoNotice && ipGeoNotice"
+              :geo="ipGeoNotice"
+              class="mx-auto mt-6 max-w-xl lg:mx-0"
+            />
           </div>
 
           <!-- Right: Terminal Animation -->
@@ -408,6 +415,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
+import { useCurrentIPGeoStatus } from '@/composables/useCurrentIPGeoStatus'
+import IPGeoAccessNotice from '@/components/common/IPGeoAccessNotice.vue'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -445,6 +454,17 @@ const userInitial = computed(() => {
   return user.email.charAt(0).toUpperCase()
 })
 
+const {
+  currentIPGeo: ipGeoNotice,
+  isUnsupportedRegion,
+  loadCurrentIPGeoStatus
+} = useCurrentIPGeoStatus()
+const authEntryBlocked = computed(() => !isAuthenticated.value && isUnsupportedRegion.value)
+const shouldShowIPGeoNotice = computed(() => {
+  const status = ipGeoNotice.value?.support_status
+  return status === 'unsupported' || status === 'unknown'
+})
+
 // Current year for footer
 const currentYear = computed(() => new Date().getFullYear())
 
@@ -477,6 +497,8 @@ onMounted(() => {
   if (!appStore.publicSettingsLoaded) {
     appStore.fetchPublicSettings()
   }
+
+  loadCurrentIPGeoStatus()
 })
 </script>
 

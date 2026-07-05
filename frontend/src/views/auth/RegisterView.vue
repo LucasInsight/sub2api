@@ -1,5 +1,9 @@
 <template>
-  <AuthLayout>
+  <AuthLayout :hide-card="isUnsupportedRegion">
+    <template v-if="isUnsupportedRegion && currentIPGeo" #notice>
+      <IPGeoAccessNotice :geo="currentIPGeo" />
+    </template>
+
     <div class="space-y-6">
       <!-- Title -->
       <div class="text-center">
@@ -10,10 +14,9 @@
           {{ t('auth.signUpToStart', { siteName }) }}
         </p>
       </div>
-
       <!-- Registration Disabled Message -->
       <div
-        v-if="!registrationEnabled && settingsLoaded"
+        v-if="!isUnsupportedRegion && !registrationEnabled && settingsLoaded"
         class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
       >
         <div class="flex items-start gap-3">
@@ -27,7 +30,7 @@
       </div>
 
       <div
-        v-else-if="registrationOAuthOnlyEnabled && settingsLoaded"
+        v-else-if="!isUnsupportedRegion && registrationOAuthOnlyEnabled && settingsLoaded"
         class="rounded-xl border p-4"
         :class="
           showOAuthLogin
@@ -270,7 +273,7 @@
       </form>
 
       <LoginAgreementPrompt
-        v-if="loginAgreementEnabled"
+        v-if="!isUnsupportedRegion && loginAgreementEnabled"
         :accepted="agreementAccepted"
         :documents="loginAgreementDocuments"
         :mode="loginAgreementMode"
@@ -321,7 +324,7 @@
     </div>
 
     <!-- Footer -->
-    <template #footer>
+    <template v-if="!isUnsupportedRegion" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.alreadyHaveAccount') }}
         <router-link
@@ -348,6 +351,8 @@ import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
+import { useCurrentIPGeoStatus } from '@/composables/useCurrentIPGeoStatus'
+import IPGeoAccessNotice from '@/components/common/IPGeoAccessNotice.vue'
 import {
   getPublicSettings,
   isWeChatWebOAuthEnabled,
@@ -376,6 +381,12 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const {
+  currentIPGeo,
+  loading: ipGeoLoading,
+  isUnsupportedRegion,
+  loadCurrentIPGeoStatus
+} = useCurrentIPGeoStatus()
 
 // ==================== State ====================
 
@@ -458,15 +469,16 @@ const validationToastMessage = computed(() =>
 
 const showOAuthLogin = computed(
   () =>
-    linuxdoOAuthEnabled.value ||
-    wechatOAuthEnabled.value ||
-    oidcOAuthEnabled.value ||
-    githubOAuthEnabled.value ||
-    googleOAuthEnabled.value
+    !isUnsupportedRegion.value &&
+    (linuxdoOAuthEnabled.value ||
+      wechatOAuthEnabled.value ||
+      oidcOAuthEnabled.value ||
+      githubOAuthEnabled.value ||
+      googleOAuthEnabled.value)
 )
 
 const showEmailRegistrationForm = computed(
-  () => registrationEnabled.value && !registrationOAuthOnlyEnabled.value
+  () => !isUnsupportedRegion.value && registrationEnabled.value && !registrationOAuthOnlyEnabled.value
 )
 
 const agreementGateActive = computed(
@@ -474,7 +486,7 @@ const agreementGateActive = computed(
 )
 
 const registrationActionDisabled = computed(
-  () => isLoading.value || !settingsLoaded.value || agreementGateActive.value
+  () => isLoading.value || !settingsLoaded.value || ipGeoLoading.value || agreementGateActive.value
 )
 
 watch(validationToastMessage, (value, previousValue) => {
@@ -494,6 +506,7 @@ function syncAffiliateReferralCode(): string {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  loadCurrentIPGeoStatus()
   syncAffiliateReferralCode()
 
   try {
@@ -799,6 +812,11 @@ function validateForm(): boolean {
   errors.invitation_code = ''
 
   let isValid = true
+
+  if (isUnsupportedRegion.value) {
+    appStore.showWarning(t('home.ipNotice.unsupportedTitle'))
+    return false
+  }
 
   if (agreementGateActive.value) {
     appStore.showWarning(t('legal.loginAgreementPrompt.registerRequiredWarning'))

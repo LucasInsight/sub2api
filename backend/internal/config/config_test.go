@@ -832,6 +832,38 @@ func TestNormalizeStringSlice(t *testing.T) {
 	}
 }
 
+func TestNormalizeCountryCodes(t *testing.T) {
+	values := NormalizeCountryCodes([]string{" cn ", "", "US", "cn", " au "})
+	require.Equal(t, []string{"CN", "US", "AU"}, values)
+	require.Nil(t, NormalizeCountryCodes(nil))
+}
+
+func TestValidateRejectsInvalidBlockedCountryCode(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("security.country_support.blocked_country_codes", []string{"USA"})
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "security.country_support.blocked_country_codes")
+}
+
+func TestLoadDefaultBlocksChinaCountryCode(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"CN"}, cfg.Security.CountrySupport.BlockedCountryCodes)
+}
+
+func TestLoadNormalizesBlockedCountryCodes(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("security.country_support.blocked_country_codes", []string{" cn ", "US", "cn"})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"CN", "US"}, cfg.Security.CountrySupport.BlockedCountryCodes)
+}
+
 func TestGetServerAddressFromEnv(t *testing.T) {
 	t.Setenv("SERVER_HOST", "127.0.0.1")
 	t.Setenv("SERVER_PORT", "9090")

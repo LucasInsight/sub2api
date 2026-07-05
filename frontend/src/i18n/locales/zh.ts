@@ -10,6 +10,17 @@ export default {
     login: '登录',
     getStarted: '立即开始',
     goToDashboard: '进入控制台',
+    ipNotice: {
+      supportedTitle: '访问地区已支持',
+      unsupportedTitle: '访问地区暂不支持',
+      unknownTitle: '无法判定访问地区',
+      meta: 'IP：{ip} · 国家/地区：{country}',
+      blockedAction: '根据服务可用性政策，本平台暂不向该地区提供服务。',
+      supportedDescription: '当前国家/地区支持使用本平台，请确认你的使用行为符合所在地法律法规及上游服务条款。',
+      unsupportedDescription: '',
+      unknownDescription: '暂无法判定当前 IP 归属，请确认你的使用行为符合所在地法律法规及上游服务条款。',
+      unknownCountry: '未知'
+    },
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',

@@ -10,6 +10,17 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
+    ipNotice: {
+      supportedTitle: 'Access region supported',
+      unsupportedTitle: 'Access region not supported',
+      unknownTitle: 'Unable to determine access region',
+      meta: 'IP: {ip} · Country/region: {country}',
+      blockedAction: 'Based on our service availability policy, this platform is not available in this region.',
+      supportedDescription: 'This country or region is currently supported. Please ensure your usage complies with local laws and upstream service terms.',
+      unsupportedDescription: '',
+      unknownDescription: 'The current IP country or region cannot be determined. Please ensure your usage complies with local laws and upstream service terms.',
+      unknownCountry: 'Unknown'
+    },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',

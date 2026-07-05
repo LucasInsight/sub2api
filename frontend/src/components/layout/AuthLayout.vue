@@ -44,13 +44,17 @@
         </template>
       </div>
 
+      <div v-if="$slots.notice" class="mb-6">
+        <slot name="notice" />
+      </div>
+
       <!-- Card Container -->
-      <div class="card-glass rounded-2xl p-8 shadow-glass">
+      <div v-if="!hideCard" class="card-glass rounded-2xl p-8 shadow-glass">
         <slot />
       </div>
 
       <!-- Footer Links -->
-      <div class="mt-6 text-center text-sm">
+      <div v-if="$slots.footer" class="mt-6 text-center text-sm">
         <slot name="footer" />
       </div>
 
@@ -68,6 +72,12 @@ import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 
 const appStore = useAppStore()
+
+withDefaults(defineProps<{
+  hideCard?: boolean
+}>(), {
+  hideCard: false
+})
 
 const siteName = computed(() => appStore.siteName || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))

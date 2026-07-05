@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geoip"
+	clientip "github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -17,6 +20,8 @@ import (
 type SettingHandler struct {
 	settingService           *service.SettingService
 	notificationEmailService *service.NotificationEmailService
+	countrySupport           config.CountrySupportConfig
+	ipGeoLookup              func(string) (geoip.LookupResult, error)
 	version                  string
 }
 
@@ -24,6 +29,8 @@ type SettingHandler struct {
 func NewSettingHandler(settingService *service.SettingService, version string) *SettingHandler {
 	return &SettingHandler{
 		settingService: settingService,
+		countrySupport: config.DefaultCountrySupportConfig(),
+		ipGeoLookup:    geoip.Lookup,
 		version:        version,
 	}
 }
@@ -32,6 +39,10 @@ func NewSettingHandler(settingService *service.SettingService, version string) *
 // changing the constructor signature used by existing tests.
 func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *service.NotificationEmailService) {
 	h.notificationEmailService = notificationEmailService
+}
+
+func (h *SettingHandler) SetCountrySupportConfig(countrySupport config.CountrySupportConfig) {
+	h.countrySupport.BlockedCountryCodes = config.NormalizeCountryCodes(countrySupport.BlockedCountryCodes)
 }
 
 // GetPublicSettings 获取公开设置
@@ -105,6 +116,97 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	})
+}
+
+const (
+	ipGeoSupportStatusSupported   = "supported"
+	ipGeoSupportStatusUnsupported = "unsupported"
+	ipGeoSupportStatusUnknown     = "unknown"
+)
+
+type currentIPGeoResponse struct {
+	IP                     string `json:"ip"`
+	CountryCode            string `json:"country_code"`
+	RegisteredCountryCode  string `json:"registered_country_code,omitempty"`
+	RepresentedCountryCode string `json:"represented_country_code,omitempty"`
+	CountryKnown           bool   `json:"country_known"`
+	IsChina                bool   `json:"is_china"`
+	Supported              bool   `json:"supported"`
+	SupportStatus          string `json:"support_status"`
+}
+
+// GetCurrentIPGeo returns the current visitor IP country and configured support status.
+// GET /api/v1/settings/ip-geo
+func (h *SettingHandler) GetCurrentIPGeo(c *gin.Context) {
+	clientIP := clientip.GetTrustedClientIP(c)
+	if strings.TrimSpace(clientIP) == "" {
+		clientIP = clientip.GetClientIP(c)
+	}
+	if strings.TrimSpace(clientIP) == "" {
+		response.Success(c, currentIPGeoResponse{
+			CountryKnown:  false,
+			Supported:     false,
+			SupportStatus: ipGeoSupportStatusUnknown,
+		})
+		return
+	}
+
+	result, err := h.lookupIPGeo(clientIP)
+	if err != nil {
+		response.InternalError(c, "failed to lookup IP country")
+		return
+	}
+
+	countryCode := effectiveCountryCode(result)
+	countryKnown := countryCode != ""
+	supported := false
+	status := ipGeoSupportStatusUnknown
+	if countryKnown {
+		supported = !isBlockedCountry(countryCode, h.countrySupport.BlockedCountryCodes)
+		if supported {
+			status = ipGeoSupportStatusSupported
+		} else {
+			status = ipGeoSupportStatusUnsupported
+		}
+	}
+
+	response.Success(c, currentIPGeoResponse{
+		IP:                     result.IP,
+		CountryCode:            countryCode,
+		RegisteredCountryCode:  result.RegisteredCountryCode,
+		RepresentedCountryCode: result.RepresentedCountryCode,
+		CountryKnown:           countryKnown,
+		IsChina:                result.IsChina,
+		Supported:              supported,
+		SupportStatus:          status,
+	})
+}
+
+func (h *SettingHandler) lookupIPGeo(clientIP string) (geoip.LookupResult, error) {
+	if h != nil && h.ipGeoLookup != nil {
+		return h.ipGeoLookup(clientIP)
+	}
+	return geoip.Lookup(clientIP)
+}
+
+func effectiveCountryCode(result geoip.LookupResult) string {
+	if result.CountryCode != "" {
+		return result.CountryCode
+	}
+	if result.RegisteredCountryCode != "" {
+		return result.RegisteredCountryCode
+	}
+	return result.RepresentedCountryCode
+}
+
+func isBlockedCountry(countryCode string, blockedCountryCodes []string) bool {
+	countryCode = strings.ToUpper(strings.TrimSpace(countryCode))
+	for _, blocked := range blockedCountryCodes {
+		if countryCode == blocked {
+			return true
+		}
+	}
+	return false
 }
 
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.

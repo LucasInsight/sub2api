@@ -1,5 +1,9 @@
 <template>
-  <AuthLayout>
+  <AuthLayout :hide-card="isUnsupportedRegion">
+    <template v-if="isUnsupportedRegion && currentIPGeo" #notice>
+      <IPGeoAccessNotice :geo="currentIPGeo" />
+    </template>
+
     <div class="space-y-6">
       <!-- Title -->
       <div class="text-center">
@@ -11,7 +15,7 @@
         </p>
       </div>
       <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="space-y-5">
+      <form v-if="!isUnsupportedRegion" @submit.prevent="handleLogin" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -173,7 +177,7 @@
     </div>
 
     <!-- Footer -->
-    <template v-if="!backendModeEnabled" #footer>
+    <template v-if="!backendModeEnabled && !isUnsupportedRegion" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.dontHaveAccount') }}
         <router-link
@@ -213,6 +217,8 @@ import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import { getPublicSettings, isTotp2FARequired, isWeChatWebOAuthEnabled } from '@/api/auth'
+import { useCurrentIPGeoStatus } from '@/composables/useCurrentIPGeoStatus'
+import IPGeoAccessNotice from '@/components/common/IPGeoAccessNotice.vue'
 import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
@@ -225,6 +231,12 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const {
+  currentIPGeo,
+  loading: ipGeoLoading,
+  isUnsupportedRegion,
+  loadCurrentIPGeoStatus
+} = useCurrentIPGeoStatus()
 
 // ==================== State ====================
 
@@ -283,7 +295,7 @@ const agreementGateActive = computed(
 )
 
 const authActionDisabled = computed(
-  () => isLoading.value || !publicSettingsLoaded.value || agreementGateActive.value
+  () => isLoading.value || !publicSettingsLoaded.value || ipGeoLoading.value || agreementGateActive.value
 )
 
 const showOAuthLogin = computed(
@@ -306,6 +318,8 @@ watch(validationToastMessage, (value, previousValue) => {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  loadCurrentIPGeoStatus()
+
   const expiredFlag = sessionStorage.getItem('auth_expired')
   if (expiredFlag) {
     sessionStorage.removeItem('auth_expired')
@@ -426,6 +440,11 @@ function validateForm(): boolean {
   errors.turnstile = ''
 
   let isValid = true
+
+  if (isUnsupportedRegion.value) {
+    appStore.showWarning(t('home.ipNotice.unsupportedTitle'))
+    return false
+  }
 
   if (agreementGateActive.value) {
     appStore.showWarning(t('legal.loginAgreementPrompt.loginRequiredWarning'))
