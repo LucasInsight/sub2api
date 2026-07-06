@@ -454,6 +454,9 @@ export default {
   auth: {
     welcomeBack: 'Welcome Back',
     signInToAccount: 'Sign in to your account to continue',
+    oauthLoginPageTitle: 'OAuth Login',
+    oauthLoginDescription: 'Choose an OAuth sign-in method to continue',
+    oauthLoginNoProvider: 'No OAuth sign-in method is available.',
     signIn: 'Sign In',
     signingIn: 'Signing in...',
     createAccount: 'Create Account',

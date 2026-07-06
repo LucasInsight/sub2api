@@ -454,6 +454,9 @@ export default {
   auth: {
     welcomeBack: '欢迎回来',
     signInToAccount: '登录您的账户以继续',
+    oauthLoginPageTitle: 'OAuth 登录',
+    oauthLoginDescription: '请选择 OAuth 登录方式继续',
+    oauthLoginNoProvider: '当前没有可用的 OAuth 登录方式。',
     signIn: '登录',
     signingIn: '登录中...',
     createAccount: '创建账户',
