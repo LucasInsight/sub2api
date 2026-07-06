@@ -250,7 +250,12 @@ const quotaEstimateTitle = computed(() => {
 
   const min = Math.min(estimate.min, estimate.max)
   const max = Math.max(estimate.min, estimate.max)
-  const parts = [t('usage.quotaEstimateTooltip')]
+  const parts = [
+    t('usage.quotaEstimateTooltip'),
+    t('usage.quotaEstimateTooltipSource'),
+    '',
+    t('usage.quotaEstimateCurrentPeriod')
+  ]
   parts.push(t('usage.quotaEstimateMinMax', {
     min: `$${formatEstimateDetailValue(min)}`,
     max: `$${formatEstimateDetailValue(max)}`
@@ -275,7 +280,8 @@ const quotaEstimateTitle = computed(() => {
   if (previous && previous.min > 0 && previous.max > 0) {
     const previousMin = Math.min(previous.min, previous.max)
     const previousMax = Math.max(previous.min, previous.max)
-    parts.push(t('usage.quotaEstimatePreviousMinMax', {
+    parts.push('', t('usage.quotaEstimatePreviousPeriodTitle'))
+    parts.push(t('usage.quotaEstimateMinMax', {
       min: `$${formatEstimateDetailValue(previousMin)}`,
       max: `$${formatEstimateDetailValue(previousMax)}`
     }))
@@ -285,18 +291,18 @@ const quotaEstimateTitle = computed(() => {
       previous.coverage_from > 0 &&
       previous.coverage_to > previous.coverage_from
     ) {
-      parts.push(t('usage.quotaEstimatePreviousCoverage', {
+      parts.push(t('usage.quotaEstimateCoverage', {
         from: formatCoveragePercent(previous.coverage_from),
         to: formatCoveragePercent(previous.coverage_to)
       }))
     }
     if (previous.period_key) {
-      parts.push(t('usage.quotaEstimatePreviousPeriod', {
+      parts.push(t('usage.quotaEstimatePeriodEndedAt', {
         time: formatEstimateTime(previous.period_key)
       }))
     }
     if (previous.updated_at) {
-      parts.push(t('usage.quotaEstimatePreviousUpdatedAt', {
+      parts.push(t('usage.quotaEstimateUpdatedAt', {
         time: formatEstimateTime(previous.updated_at)
       }))
     }
