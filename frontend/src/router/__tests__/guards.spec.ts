@@ -76,7 +76,7 @@ function simulateGuard(
   if (!requiresAuth) {
     if (
       authState.isAuthenticated &&
-      (toPath === '/login' || toPath === '/register')
+      (toPath === '/login' || toPath === '/oauth2-sso' || toPath === '/register')
     ) {
       if (authState.backendModeEnabled && !authState.isAdmin) {
         return null
@@ -84,7 +84,7 @@ function simulateGuard(
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
     if (authState.backendModeEnabled && !authState.isAuthenticated) {
-      const allowed = ['/login', '/key-usage', '/setup', '/payment/result']
+      const allowed = ['/login', '/oauth2-sso', '/key-usage', '/setup', '/payment/result']
       const callbackPaths = [
         '/auth/callback',
         '/auth/linuxdo/callback',
@@ -133,7 +133,7 @@ function simulateGuard(
     if (authState.isAuthenticated && authState.isAdmin) {
       return null
     }
-    const allowed = ['/login', '/key-usage', '/setup', '/payment/result']
+    const allowed = ['/login', '/oauth2-sso', '/key-usage', '/setup', '/payment/result']
     const callbackPaths = [
       '/auth/callback',
       '/auth/linuxdo/callback',
@@ -207,6 +207,11 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBe('/dashboard')
     })
 
+    it('访问 /oauth2-sso 重定向到 /dashboard', () => {
+      const redirect = simulateGuard('/oauth2-sso', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/dashboard')
+    })
+
     it('访问 /register 重定向到 /dashboard', () => {
       const redirect = simulateGuard('/register', { requiresAuth: false }, authState)
       expect(redirect).toBe('/dashboard')
@@ -241,6 +246,11 @@ describe('路由守卫逻辑', () => {
 
     it('访问 /login 重定向到 /admin/dashboard', () => {
       const redirect = simulateGuard('/login', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/admin/dashboard')
+    })
+
+    it('访问 /oauth2-sso 重定向到 /admin/dashboard', () => {
+      const redirect = simulateGuard('/oauth2-sso', { requiresAuth: false }, authState)
       expect(redirect).toBe('/admin/dashboard')
     })
 
@@ -360,6 +370,18 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBeNull()
     })
 
+    it('unauthenticated: /oauth2-sso is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/oauth2-sso', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
     it('unauthenticated: /key-usage is allowed', () => {
       const authState: MockAuthState = {
         isAuthenticated: false,
@@ -434,6 +456,18 @@ describe('路由守卫逻辑', () => {
       expect(redirect).toBe('/admin/dashboard')
     })
 
+    it('admin: /oauth2-sso redirects to /admin/dashboard', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: true,
+        isAdmin: true,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/oauth2-sso', { requiresAuth: false }, authState)
+      expect(redirect).toBe('/admin/dashboard')
+    })
+
     it('non-admin authenticated: /dashboard redirects to /login', () => {
       const authState: MockAuthState = {
         isAuthenticated: true,
@@ -455,6 +489,18 @@ describe('路由守卫逻辑', () => {
         hasPendingAuthSession: false,
       }
       const redirect = simulateGuard('/login', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('non-admin authenticated: /oauth2-sso is allowed (no redirect loop)', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: true,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/oauth2-sso', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
     })
 

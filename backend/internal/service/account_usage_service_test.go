@@ -264,6 +264,8 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 
 	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)
 	activeReset := now.Add(2 * time.Hour)
+	activePeriod := activeReset.UTC().Format(time.RFC3339)
+	previousPeriod := now.Add(-3 * time.Hour).UTC().Format(time.RFC3339)
 
 	t.Run("first valid sample initializes min max", func(t *testing.T) {
 		progress := &UsageProgress{
@@ -282,11 +284,17 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		if estimate.CoverageFrom != 20 || estimate.CoverageTo != 30 {
 			t.Fatalf("estimate coverage = %#v, want 20-30", estimate)
 		}
+		if estimate.PeriodKey != activePeriod {
+			t.Fatalf("estimate period = %q, want %q", estimate.PeriodKey, activePeriod)
+		}
 		if updates["codex_5h_quota_estimate_min"] != 10.0 || updates["codex_5h_quota_estimate_max"] != 10.0 {
 			t.Fatalf("unexpected updates: %#v", updates)
 		}
 		if updates["codex_5h_quota_estimate_coverage_from"] != 20.0 || updates["codex_5h_quota_estimate_coverage_to"] != 30.0 {
 			t.Fatalf("unexpected coverage updates: %#v", updates)
+		}
+		if updates["codex_5h_quota_estimate_period_key"] != activePeriod {
+			t.Fatalf("unexpected period update: %#v", updates)
 		}
 	})
 
@@ -303,6 +311,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_7d_quota_estimate_updated_at":    "2026-03-16T10:00:00Z",
 			"codex_7d_quota_estimate_coverage_from": 50.0,
 			"codex_7d_quota_estimate_coverage_to":   60.0,
+			"codex_7d_quota_estimate_period_key":    activePeriod,
 		}, progress, "7d", now)
 
 		if estimate.Min != 8 || estimate.Max != 20 {
@@ -331,6 +340,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_5h_quota_estimate_max":           20.0,
 			"codex_5h_quota_estimate_coverage_from": 50.0,
 			"codex_5h_quota_estimate_coverage_to":   60.0,
+			"codex_5h_quota_estimate_period_key":    activePeriod,
 		}, progress, "5h", now)
 
 		if estimate.Min != 10 || estimate.Max != 20 {
@@ -357,6 +367,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 				"codex_5h_quota_estimate_max":           20.0,
 				"codex_5h_quota_estimate_coverage_from": 50.0,
 				"codex_5h_quota_estimate_coverage_to":   60.0,
+				"codex_5h_quota_estimate_period_key":    activePeriod,
 			}, progress, "5h", now)
 			if estimate == nil || estimate.Min != 10 || estimate.Max != 20 {
 				t.Fatalf("expected existing estimate, got %#v", estimate)
@@ -398,6 +409,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_5h_quota_estimate_max":           40.0,
 			"codex_5h_quota_estimate_coverage_from": 5.0,
 			"codex_5h_quota_estimate_coverage_to":   10.0,
+			"codex_5h_quota_estimate_period_key":    activePeriod,
 		}, progress, "5h", now)
 
 		if estimate.Min != 12 || estimate.Max != 12 {
@@ -423,6 +435,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_7d_quota_estimate_max":           18.0,
 			"codex_7d_quota_estimate_coverage_from": 50.0,
 			"codex_7d_quota_estimate_coverage_to":   60.0,
+			"codex_7d_quota_estimate_period_key":    activePeriod,
 		}, progress, "7d", now)
 
 		if estimate.Min != 15 || estimate.Max != 18 {
@@ -454,6 +467,72 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		if updates["codex_5h_quota_estimate_coverage_from"] != 20.0 || updates["codex_5h_quota_estimate_coverage_to"] != 30.0 {
 			t.Fatalf("unexpected coverage updates: %#v", updates)
 		}
+		if updates["codex_5h_quota_estimate_period_key"] != activePeriod {
+			t.Fatalf("unexpected period update: %#v", updates)
+		}
+		if estimate.Previous != nil {
+			t.Fatalf("legacy estimate should not create previous snapshot: %#v", estimate.Previous)
+		}
+	})
+
+	t.Run("new period valid sample replaces current and records previous", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 15,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 1.8},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_5h_quota_estimate_min":           90.0,
+			"codex_5h_quota_estimate_max":           100.0,
+			"codex_5h_quota_estimate_updated_at":    "2026-03-16T09:00:00Z",
+			"codex_5h_quota_estimate_coverage_from": 90.0,
+			"codex_5h_quota_estimate_coverage_to":   100.0,
+			"codex_5h_quota_estimate_period_key":    previousPeriod,
+		}, progress, "5h", now)
+
+		if estimate == nil || estimate.Min != 12 || estimate.Max != 12 {
+			t.Fatalf("estimate = %#v, want current min=max=12", estimate)
+		}
+		if estimate.CoverageFrom != 10 || estimate.CoverageTo != 20 || estimate.PeriodKey != activePeriod {
+			t.Fatalf("estimate current period fields = %#v, want coverage 10-20 period %s", estimate, activePeriod)
+		}
+		if estimate.Previous == nil || estimate.Previous.Min != 90 || estimate.Previous.Max != 100 {
+			t.Fatalf("previous estimate = %#v, want 90-100", estimate.Previous)
+		}
+		if estimate.Previous.CoverageFrom != 90 || estimate.Previous.CoverageTo != 100 || estimate.Previous.PeriodKey != previousPeriod {
+			t.Fatalf("previous estimate fields = %#v, want coverage 90-100 period %s", estimate.Previous, previousPeriod)
+		}
+		if updates["codex_5h_quota_estimate_min"] != 12.0 || updates["codex_5h_quota_estimate_max"] != 12.0 {
+			t.Fatalf("unexpected current updates: %#v", updates)
+		}
+		if updates["codex_5h_quota_estimate_prev_min"] != 90.0 || updates["codex_5h_quota_estimate_prev_max"] != 100.0 {
+			t.Fatalf("unexpected previous updates: %#v", updates)
+		}
+	})
+
+	t.Run("new period invalid sample keeps previous current estimate", func(t *testing.T) {
+		progress := &UsageProgress{
+			Utilization: 1,
+			ResetsAt:    &activeReset,
+			WindowStats: &WindowStats{Cost: 1},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_quota_estimate_min":           90.0,
+			"codex_7d_quota_estimate_max":           100.0,
+			"codex_7d_quota_estimate_updated_at":    "2026-03-16T09:00:00Z",
+			"codex_7d_quota_estimate_coverage_from": 90.0,
+			"codex_7d_quota_estimate_coverage_to":   100.0,
+			"codex_7d_quota_estimate_period_key":    previousPeriod,
+		}, progress, "7d", now)
+
+		if estimate == nil || estimate.Min != 90 || estimate.Max != 100 || estimate.PeriodKey != previousPeriod {
+			t.Fatalf("estimate = %#v, want existing previous-period current estimate", estimate)
+		}
+		if len(updates) != 0 {
+			t.Fatalf("expected no updates, got %#v", updates)
+		}
 	})
 }
 
@@ -481,6 +560,9 @@ func TestAccountUsageServiceApplyCodexQuotaEstimateUpdatesExtra(t *testing.T) {
 	}
 	if account.Extra["codex_5h_quota_estimate_coverage_from"] != 20.0 || account.Extra["codex_5h_quota_estimate_coverage_to"] != 30.0 {
 		t.Fatalf("account extra coverage not updated: %#v", account.Extra)
+	}
+	if account.Extra["codex_5h_quota_estimate_period_key"] != resetAt.UTC().Format(time.RFC3339) {
+		t.Fatalf("account extra period not updated: %#v", account.Extra)
 	}
 	if len(repo.updateExtraCalls) != 1 {
 		t.Fatalf("expected one UpdateExtra call, got %d", len(repo.updateExtraCalls))

@@ -124,6 +124,7 @@ describe('UsageProgressBar', () => {
     expect(badge.attributes('title')).toContain('$12.3456')
     expect(badge.attributes('title')).toContain('usage.quotaEstimateCoverage')
     expect(badge.attributes('title')).toContain('usage.quotaEstimateUpdatedAt')
+    expect(badge.attributes('title')).not.toContain('usage.quotaEstimatePreviousMinMax')
   })
 
   it('tooltip 中使用完整 quota 估算值，不使用 K 省略', () => {
@@ -137,7 +138,15 @@ describe('UsageProgressBar', () => {
           min: 2488.25,
           max: 2504.75,
           coverage_from: 80,
-          coverage_to: 90
+          coverage_to: 90,
+          previous: {
+            min: 1234.5678,
+            max: 4567.89,
+            updated_at: '2026-03-16T10:00:00Z',
+            coverage_from: 90,
+            coverage_to: 100,
+            period_key: '2026-03-16T12:00:00Z'
+          }
         }
       }
     })
@@ -146,6 +155,12 @@ describe('UsageProgressBar', () => {
     const badge = wrapper.find('[title*="usage.quotaEstimateTooltip"]')
     expect(badge.attributes('title')).toContain('$2,488.25')
     expect(badge.attributes('title')).toContain('$2,504.75')
+    expect(badge.attributes('title')).toContain('usage.quotaEstimatePreviousMinMax')
+    expect(badge.attributes('title')).toContain('$1,234.5678')
+    expect(badge.attributes('title')).toContain('$4,567.89')
+    expect(badge.attributes('title')).toContain('usage.quotaEstimatePreviousCoverage')
+    expect(badge.attributes('title')).toContain('usage.quotaEstimatePreviousPeriod')
+    expect(badge.attributes('title')).toContain('usage.quotaEstimatePreviousUpdatedAt')
     expect(badge.attributes('title')).not.toContain('$2.5K')
   })
 

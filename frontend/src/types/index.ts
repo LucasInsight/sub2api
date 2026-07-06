@@ -973,6 +973,15 @@ export interface UsageProgress {
     updated_at?: string
     coverage_from?: number
     coverage_to?: number
+    period_key?: string
+    previous?: {
+      min: number
+      max: number
+      updated_at?: string
+      coverage_from?: number
+      coverage_to?: number
+      period_key?: string
+    } | null
   } | null
 }
 
