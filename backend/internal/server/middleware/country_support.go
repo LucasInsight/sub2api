@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -104,6 +105,10 @@ func CountrySupportGateWithLookup(
 			c.Next()
 			return
 		}
+		displayIP := strings.TrimSpace(result.IP)
+		if displayIP == "" {
+			displayIP = clientIP
+		}
 
 		apiKey, _ := GetAPIKeyFromContext(c)
 		platform := gatewayPlatform(apiKey)
@@ -123,9 +128,18 @@ func CountrySupportGateWithLookup(
 				writer = selected
 			}
 		}
-		writer(c, http.StatusForbidden, countryUnsupportedMessage)
+		writer(c, http.StatusForbidden, countryUnsupportedMessageFor(displayIP, countryCode))
 		c.Abort()
 	}
+}
+
+func countryUnsupportedMessageFor(clientIP, countryCode string) string {
+	clientIP = strings.TrimSpace(clientIP)
+	countryCode = strings.TrimSpace(countryCode)
+	if clientIP == "" || countryCode == "" {
+		return countryUnsupportedMessage
+	}
+	return fmt.Sprintf("%s Your IP: %s, country/region: %s.", countryUnsupportedMessage, clientIP, countryCode)
 }
 
 func isNonPublicIP(ipText string) bool {

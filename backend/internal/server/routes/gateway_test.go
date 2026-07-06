@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const unsupportedCountryTestMessage = "Service is not available in your country or region. Your IP: 8.8.8.8, country/region: CN."
+
 func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 	groupPlatform := service.PlatformOpenAI
 	if len(platform) > 0 && platform[0] != "" {
@@ -212,21 +214,33 @@ func TestGatewayRoutesCountrySupportBlocksOpenAIEntrypoints(t *testing.T) {
 	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
 	router := newGatewayRoutesTestRouterWithConfig(service.PlatformOpenAI, cfg)
 
-	for _, path := range []string{
-		"/v1/chat/completions",
-		"/v1/responses",
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/chat/completions"},
+		{http.MethodPost, "/v1/responses"},
+		{http.MethodPost, "/v1/embeddings"},
+		{http.MethodPost, "/v1/images/generations"},
+		{http.MethodPost, "/v1/videos/generations"},
+		{http.MethodGet, "/v1/videos/request-123"},
+		{http.MethodPost, "/responses"},
+		{http.MethodPost, "/chat/completions"},
+		{http.MethodPost, "/embeddings"},
+		{http.MethodPost, "/images/generations"},
+		{http.MethodPost, "/images/edits"},
+		{http.MethodPost, "/videos/generations"},
+		{http.MethodGet, "/videos/request-123"},
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5"}`))
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"gpt-5"}`))
 		req.RemoteAddr = "8.8.8.8:12345"
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
 
-		require.Equal(t, http.StatusForbidden, w.Code, "path=%s", path)
-		require.JSONEq(t, `{"error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
-		require.NotContains(t, w.Body.String(), "CN")
-		require.NotContains(t, w.Body.String(), "8.8.8.8")
+		require.Equal(t, http.StatusForbidden, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.JSONEq(t, `{"error":{"type":"permission_error","message":"`+unsupportedCountryTestMessage+`"}}`, w.Body.String())
 	}
 }
 
@@ -240,17 +254,27 @@ func TestGatewayRoutesCountrySupportBlocksAnthropicMessages(t *testing.T) {
 	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
 	router := newGatewayRoutesTestRouterWithConfig(service.PlatformAnthropic, cfg)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[]}`))
-	req.RemoteAddr = "8.8.8.8:12345"
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/messages"},
+		{http.MethodPost, "/antigravity/v1/messages"},
+		{http.MethodPost, "/antigravity/v1/messages/count_tokens"},
+		{http.MethodGet, "/antigravity/v1/models"},
+		{http.MethodGet, "/antigravity/v1/usage"},
+		{http.MethodGet, "/antigravity/models"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[]}`))
+		req.RemoteAddr = "8.8.8.8:12345"
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
 
-	router.ServeHTTP(w, req)
+		router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
-	require.NotContains(t, w.Body.String(), "CN")
-	require.NotContains(t, w.Body.String(), "8.8.8.8")
+		require.Equal(t, http.StatusForbidden, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"`+unsupportedCountryTestMessage+`"}}`, w.Body.String())
+	}
 }
 
 func TestGatewayRoutesCountrySupportKeepsGatewayResponsesShape(t *testing.T) {
@@ -263,15 +287,26 @@ func TestGatewayRoutesCountrySupportKeepsGatewayResponsesShape(t *testing.T) {
 	cfg.Security.CountrySupport.BlockedCountryCodes = []string{"CN"}
 	router := newGatewayRoutesTestRouterWithConfig(service.PlatformAnthropic, cfg)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"claude-sonnet-4-5","input":"hi"}`))
-	req.RemoteAddr = "8.8.8.8:12345"
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/responses"},
+		{http.MethodPost, "/responses"},
+		{http.MethodGet, "/responses"},
+		{http.MethodPost, "/responses/compact"},
+		{http.MethodPost, "/backend-api/codex/responses"},
+		{http.MethodGet, "/backend-api/codex/responses"},
+		{http.MethodPost, "/backend-api/codex/responses/compact"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"model":"claude-sonnet-4-5","input":"hi"}`))
+		req.RemoteAddr = "8.8.8.8:12345"
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
 
-	router.ServeHTTP(w, req)
+		router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.JSONEq(t, `{"error":{"code":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
-	require.NotContains(t, w.Body.String(), "CN")
-	require.NotContains(t, w.Body.String(), "8.8.8.8")
+		require.Equal(t, http.StatusForbidden, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.JSONEq(t, `{"error":{"code":"permission_error","message":"`+unsupportedCountryTestMessage+`"}}`, w.Body.String())
+	}
 }

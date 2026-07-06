@@ -29,9 +29,7 @@ func TestCountrySupportGateBlocksUnsupportedCountry(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.False(t, *nextCalled)
-	require.JSONEq(t, `{"error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
-	require.NotContains(t, w.Body.String(), "CN")
-	require.NotContains(t, w.Body.String(), "8.8.8.8")
+	require.JSONEq(t, `{"error":{"type":"permission_error","message":"Service is not available in your country or region. Your IP: 8.8.8.8, country/region: CN."}}`, w.Body.String())
 }
 
 func TestCountrySupportGateAllowsSupportedCountry(t *testing.T) {
@@ -124,9 +122,25 @@ func TestCountrySupportGateAnthropicErrorWriter(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	require.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"Service is not available in your country or region."}}`, w.Body.String())
-	require.NotContains(t, w.Body.String(), "CN")
-	require.NotContains(t, w.Body.String(), "8.8.8.8")
+	require.JSONEq(t, `{"type":"error","error":{"type":"permission_error","message":"Service is not available in your country or region. Your IP: 8.8.8.8, country/region: CN."}}`, w.Body.String())
+}
+
+func TestCountrySupportGateGoogleErrorWriter(t *testing.T) {
+	router, _ := newCountrySupportTestRouter(
+		config.CountrySupportConfig{BlockedCountryCodes: []string{"CN"}},
+		func(string) (geoip.LookupResult, error) {
+			return geoip.LookupResult{CountryCode: "CN"}, nil
+		},
+		func(*gin.Context) GatewayErrorWriter { return GoogleErrorWriter },
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+	req.RemoteAddr = "8.8.8.8:12345"
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.JSONEq(t, `{"error":{"code":403,"message":"Service is not available in your country or region. Your IP: 8.8.8.8, country/region: CN.","status":"PERMISSION_DENIED"}}`, w.Body.String())
 }
 
 func newCountrySupportTestRouter(
@@ -152,6 +166,10 @@ func newCountrySupportTestRouter(
 		c.String(http.StatusOK, "ok")
 	})
 	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		nextCalled = true
+		c.String(http.StatusOK, "ok")
+	})
+	router.POST("/v1beta/models/:model", func(c *gin.Context) {
 		nextCalled = true
 		c.String(http.StatusOK, "ok")
 	})
