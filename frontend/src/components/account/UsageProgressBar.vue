@@ -227,6 +227,11 @@ const formatCoveragePercent = (value: number): string => {
   return value.toFixed(1).replace(/\.0$/, '')
 }
 
+const formatEstimateTime = (value: string): string => {
+  const time = new Date(value)
+  return Number.isNaN(time.getTime()) ? value : time.toLocaleString()
+}
+
 const quotaEstimateLabel = computed(() => {
   const estimate = props.quotaEstimate
   if (!estimate || estimate.min <= 0 || estimate.max <= 0) return ''
@@ -263,8 +268,38 @@ const quotaEstimateTitle = computed(() => {
   }
   if (estimate.updated_at) {
     parts.push(t('usage.quotaEstimateUpdatedAt', {
-      time: new Date(estimate.updated_at).toLocaleString()
+      time: formatEstimateTime(estimate.updated_at)
     }))
+  }
+  const previous = estimate.previous
+  if (previous && previous.min > 0 && previous.max > 0) {
+    const previousMin = Math.min(previous.min, previous.max)
+    const previousMax = Math.max(previous.min, previous.max)
+    parts.push(t('usage.quotaEstimatePreviousMinMax', {
+      min: `$${formatEstimateDetailValue(previousMin)}`,
+      max: `$${formatEstimateDetailValue(previousMax)}`
+    }))
+    if (
+      previous.coverage_from != null &&
+      previous.coverage_to != null &&
+      previous.coverage_from > 0 &&
+      previous.coverage_to > previous.coverage_from
+    ) {
+      parts.push(t('usage.quotaEstimatePreviousCoverage', {
+        from: formatCoveragePercent(previous.coverage_from),
+        to: formatCoveragePercent(previous.coverage_to)
+      }))
+    }
+    if (previous.period_key) {
+      parts.push(t('usage.quotaEstimatePreviousPeriod', {
+        time: formatEstimateTime(previous.period_key)
+      }))
+    }
+    if (previous.updated_at) {
+      parts.push(t('usage.quotaEstimatePreviousUpdatedAt', {
+        time: formatEstimateTime(previous.updated_at)
+      }))
+    }
   }
   return parts.join('\n')
 })

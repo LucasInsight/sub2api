@@ -155,11 +155,22 @@ type UsageProgress struct {
 }
 
 type QuotaEstimate struct {
+	Min          float64                `json:"min"`
+	Max          float64                `json:"max"`
+	UpdatedAt    string                 `json:"updated_at,omitempty"`
+	CoverageFrom float64                `json:"coverage_from,omitempty"`
+	CoverageTo   float64                `json:"coverage_to,omitempty"`
+	PeriodKey    string                 `json:"period_key,omitempty"`
+	Previous     *QuotaEstimateSnapshot `json:"previous,omitempty"`
+}
+
+type QuotaEstimateSnapshot struct {
 	Min          float64 `json:"min"`
 	Max          float64 `json:"max"`
 	UpdatedAt    string  `json:"updated_at,omitempty"`
 	CoverageFrom float64 `json:"coverage_from,omitempty"`
 	CoverageTo   float64 `json:"coverage_to,omitempty"`
+	PeriodKey    string  `json:"period_key,omitempty"`
 }
 
 // AntigravityModelQuota Antigravity 单个模型的配额信息
@@ -1296,6 +1307,7 @@ type codexQuotaEstimateSampleData struct {
 	Value        float64
 	CoverageFrom float64
 	CoverageTo   float64
+	PeriodKey    string
 }
 
 func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgress, window string, now time.Time) (*QuotaEstimate, map[string]any) {
@@ -1311,11 +1323,18 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 
 	updatedAt := now.UTC().Format(time.RFC3339)
 	if estimate == nil {
-		return newCodexQuotaEstimate(window, sample, updatedAt)
+		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
+	}
+
+	if sample.PeriodKey != "" && estimate.PeriodKey == "" {
+		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
+	}
+	if sample.PeriodKey != "" && estimate.PeriodKey != "" && sample.PeriodKey != estimate.PeriodKey {
+		return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
 	}
 
 	if estimate.CoverageFrom <= 0 || sample.CoverageFrom > estimate.CoverageFrom {
-		return newCodexQuotaEstimate(window, sample, updatedAt)
+		return newCodexQuotaEstimate(window, sample, updatedAt, estimate.Previous)
 	}
 	if sample.CoverageFrom < estimate.CoverageFrom {
 		return estimate, nil
@@ -1338,21 +1357,42 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 	return estimate, updates
 }
 
-func newCodexQuotaEstimate(window string, sample codexQuotaEstimateSampleData, updatedAt string) (*QuotaEstimate, map[string]any) {
+func newCodexQuotaEstimate(window string, sample codexQuotaEstimateSampleData, updatedAt string, previous *QuotaEstimateSnapshot) (*QuotaEstimate, map[string]any) {
 	estimate := &QuotaEstimate{
 		Min:          sample.Value,
 		Max:          sample.Value,
 		UpdatedAt:    updatedAt,
 		CoverageFrom: sample.CoverageFrom,
 		CoverageTo:   sample.CoverageTo,
+		PeriodKey:    sample.PeriodKey,
+		Previous:     previous,
 	}
-	return estimate, map[string]any{
+	updates := map[string]any{
 		codexQuotaEstimateMinKey(window):          sample.Value,
 		codexQuotaEstimateMaxKey(window):          sample.Value,
 		codexQuotaEstimateUpdatedAtKey(window):    updatedAt,
 		codexQuotaEstimateCoverageFromKey(window): sample.CoverageFrom,
 		codexQuotaEstimateCoverageToKey(window):   sample.CoverageTo,
 	}
+	if sample.PeriodKey != "" {
+		updates[codexQuotaEstimatePeriodKeyKey(window)] = sample.PeriodKey
+	}
+	if previous != nil {
+		updates[codexQuotaEstimatePrevMinKey(window)] = previous.Min
+		updates[codexQuotaEstimatePrevMaxKey(window)] = previous.Max
+		updates[codexQuotaEstimatePrevUpdatedAtKey(window)] = previous.UpdatedAt
+		updates[codexQuotaEstimatePrevCoverageFromKey(window)] = previous.CoverageFrom
+		updates[codexQuotaEstimatePrevCoverageToKey(window)] = previous.CoverageTo
+		updates[codexQuotaEstimatePrevPeriodKeyKey(window)] = previous.PeriodKey
+	} else {
+		updates[codexQuotaEstimatePrevMinKey(window)] = nil
+		updates[codexQuotaEstimatePrevMaxKey(window)] = nil
+		updates[codexQuotaEstimatePrevUpdatedAtKey(window)] = nil
+		updates[codexQuotaEstimatePrevCoverageFromKey(window)] = nil
+		updates[codexQuotaEstimatePrevCoverageToKey(window)] = nil
+		updates[codexQuotaEstimatePrevPeriodKeyKey(window)] = nil
+	}
+	return estimate, updates
 }
 
 func codexQuotaEstimateSample(progress *UsageProgress, now time.Time) (codexQuotaEstimateSampleData, bool) {
@@ -1383,6 +1423,7 @@ func codexQuotaEstimateSample(progress *UsageProgress, now time.Time) (codexQuot
 		Value:        roundQuotaEstimate(value),
 		CoverageFrom: coverageFrom,
 		CoverageTo:   coverageTo,
+		PeriodKey:    codexQuotaEstimatePeriodKeyFromProgress(progress),
 	}, true
 }
 
@@ -1402,11 +1443,57 @@ func codexQuotaEstimateCoverage(utilization float64) (float64, float64, bool) {
 }
 
 func quotaEstimateFromExtra(extra map[string]any, window string) *QuotaEstimate {
+	estimate := quotaEstimateSnapshotFromExtra(
+		extra,
+		codexQuotaEstimateMinKey(window),
+		codexQuotaEstimateMaxKey(window),
+		codexQuotaEstimateUpdatedAtKey(window),
+		codexQuotaEstimateCoverageFromKey(window),
+		codexQuotaEstimateCoverageToKey(window),
+		codexQuotaEstimatePeriodKeyKey(window),
+	)
+	if estimate == nil {
+		return nil
+	}
+	return &QuotaEstimate{
+		Min:          estimate.Min,
+		Max:          estimate.Max,
+		UpdatedAt:    estimate.UpdatedAt,
+		CoverageFrom: estimate.CoverageFrom,
+		CoverageTo:   estimate.CoverageTo,
+		PeriodKey:    estimate.PeriodKey,
+		Previous: quotaEstimateSnapshotFromExtra(
+			extra,
+			codexQuotaEstimatePrevMinKey(window),
+			codexQuotaEstimatePrevMaxKey(window),
+			codexQuotaEstimatePrevUpdatedAtKey(window),
+			codexQuotaEstimatePrevCoverageFromKey(window),
+			codexQuotaEstimatePrevCoverageToKey(window),
+			codexQuotaEstimatePrevPeriodKeyKey(window),
+		),
+	}
+}
+
+func quotaEstimateSnapshotFromCurrent(estimate *QuotaEstimate) *QuotaEstimateSnapshot {
+	if estimate == nil {
+		return nil
+	}
+	return &QuotaEstimateSnapshot{
+		Min:          estimate.Min,
+		Max:          estimate.Max,
+		UpdatedAt:    estimate.UpdatedAt,
+		CoverageFrom: estimate.CoverageFrom,
+		CoverageTo:   estimate.CoverageTo,
+		PeriodKey:    estimate.PeriodKey,
+	}
+}
+
+func quotaEstimateSnapshotFromExtra(extra map[string]any, minKey, maxKey, updatedAtKey, coverageFromKey, coverageToKey, periodKeyKey string) *QuotaEstimateSnapshot {
 	if len(extra) == 0 {
 		return nil
 	}
-	minValue := parseExtraFloat64(extra[codexQuotaEstimateMinKey(window)])
-	maxValue := parseExtraFloat64(extra[codexQuotaEstimateMaxKey(window)])
+	minValue := parseExtraFloat64(extra[minKey])
+	maxValue := parseExtraFloat64(extra[maxKey])
 	if minValue <= 0 && maxValue <= 0 {
 		return nil
 	}
@@ -1419,20 +1506,32 @@ func quotaEstimateFromExtra(extra map[string]any, window string) *QuotaEstimate 
 	if minValue > maxValue {
 		minValue, maxValue = maxValue, minValue
 	}
-	estimate := &QuotaEstimate{
+	estimate := &QuotaEstimateSnapshot{
 		Min: roundQuotaEstimate(minValue),
 		Max: roundQuotaEstimate(maxValue),
 	}
-	if raw, ok := extra[codexQuotaEstimateUpdatedAtKey(window)]; ok {
+	if raw, ok := extra[updatedAtKey]; ok {
 		estimate.UpdatedAt = fmt.Sprint(raw)
 	}
-	coverageFrom := parseExtraFloat64(extra[codexQuotaEstimateCoverageFromKey(window)])
-	coverageTo := parseExtraFloat64(extra[codexQuotaEstimateCoverageToKey(window)])
+	coverageFrom := parseExtraFloat64(extra[coverageFromKey])
+	coverageTo := parseExtraFloat64(extra[coverageToKey])
 	if coverageFrom > 0 && coverageTo > coverageFrom {
 		estimate.CoverageFrom = coverageFrom
 		estimate.CoverageTo = coverageTo
 	}
+	if raw, ok := extra[periodKeyKey]; ok && raw != nil {
+		if text := strings.TrimSpace(fmt.Sprint(raw)); text != "" && text != "<nil>" {
+			estimate.PeriodKey = text
+		}
+	}
 	return estimate
+}
+
+func codexQuotaEstimatePeriodKeyFromProgress(progress *UsageProgress) string {
+	if progress == nil || progress.ResetsAt == nil {
+		return ""
+	}
+	return progress.ResetsAt.UTC().Format(time.RFC3339)
 }
 
 func codexQuotaEstimateMinKey(window string) string {
@@ -1447,12 +1546,40 @@ func codexQuotaEstimateUpdatedAtKey(window string) string {
 	return fmt.Sprintf("codex_%s_quota_estimate_updated_at", window)
 }
 
+func codexQuotaEstimatePeriodKeyKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_period_key", window)
+}
+
 func codexQuotaEstimateCoverageFromKey(window string) string {
 	return fmt.Sprintf("codex_%s_quota_estimate_coverage_from", window)
 }
 
 func codexQuotaEstimateCoverageToKey(window string) string {
 	return fmt.Sprintf("codex_%s_quota_estimate_coverage_to", window)
+}
+
+func codexQuotaEstimatePrevMinKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_min", window)
+}
+
+func codexQuotaEstimatePrevMaxKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_max", window)
+}
+
+func codexQuotaEstimatePrevUpdatedAtKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_updated_at", window)
+}
+
+func codexQuotaEstimatePrevPeriodKeyKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_period_key", window)
+}
+
+func codexQuotaEstimatePrevCoverageFromKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_coverage_from", window)
+}
+
+func codexQuotaEstimatePrevCoverageToKey(window string) string {
+	return fmt.Sprintf("codex_%s_quota_estimate_prev_coverage_to", window)
 }
 
 func roundQuotaEstimate(value float64) float64 {
