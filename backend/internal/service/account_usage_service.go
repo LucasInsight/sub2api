@@ -1311,11 +1311,11 @@ type codexQuotaEstimateSampleData struct {
 }
 
 func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgress, window string, now time.Time) (*QuotaEstimate, map[string]any) {
+	estimate := sanitizeQuotaEstimateForNow(quotaEstimateFromExtra(extra, window), now)
 	if progress == nil {
-		return quotaEstimateFromExtra(extra, window), nil
+		return estimate, nil
 	}
 
-	estimate := quotaEstimateFromExtra(extra, window)
 	sample, ok := codexQuotaEstimateSample(progress, now)
 	if !ok {
 		return estimate, nil
@@ -1326,18 +1326,11 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
 	}
 
-	if sample.PeriodKey != "" && estimate.PeriodKey == "" {
-		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
-	}
-	if sample.PeriodKey != "" && estimate.PeriodKey != "" && sample.PeriodKey != estimate.PeriodKey {
+	if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
 		return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
 	}
-
 	if estimate.CoverageFrom <= 0 || sample.CoverageFrom > estimate.CoverageFrom {
 		return newCodexQuotaEstimate(window, sample, updatedAt, estimate.Previous)
-	}
-	if sample.CoverageFrom < estimate.CoverageFrom {
-		return estimate, nil
 	}
 
 	updates := make(map[string]any)
@@ -1355,6 +1348,18 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 	estimate.UpdatedAt = updatedAt
 	updates[codexQuotaEstimateUpdatedAtKey(window)] = updatedAt
 	return estimate, updates
+}
+
+func sanitizeQuotaEstimateForNow(estimate *QuotaEstimate, now time.Time) *QuotaEstimate {
+	if estimate == nil || estimate.Previous == nil || estimate.Previous.PeriodKey == "" {
+		return estimate
+	}
+	previousPeriod, err := parseTime(estimate.Previous.PeriodKey)
+	if err != nil || !previousPeriod.After(now) {
+		return estimate
+	}
+	estimate.Previous = nil
+	return estimate
 }
 
 func newCodexQuotaEstimate(window string, sample codexQuotaEstimateSampleData, updatedAt string, previous *QuotaEstimateSnapshot) (*QuotaEstimate, map[string]any) {

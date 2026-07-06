@@ -328,6 +328,34 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		}
 	})
 
+	t.Run("same coverage reset time drift does not record previous", func(t *testing.T) {
+		driftedReset := activeReset.Add(5 * time.Second)
+		progress := &UsageProgress{
+			Utilization: 50,
+			ResetsAt:    &driftedReset,
+			WindowStats: &WindowStats{Cost: 4},
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_quota_estimate_min":           10.0,
+			"codex_7d_quota_estimate_max":           20.0,
+			"codex_7d_quota_estimate_updated_at":    "2026-03-16T10:00:00Z",
+			"codex_7d_quota_estimate_coverage_from": 50.0,
+			"codex_7d_quota_estimate_coverage_to":   60.0,
+			"codex_7d_quota_estimate_period_key":    activePeriod,
+		}, progress, "7d", now)
+
+		if estimate.Min != 8 || estimate.Max != 20 {
+			t.Fatalf("estimate = %#v, want min=8 max=20", estimate)
+		}
+		if estimate.Previous != nil {
+			t.Fatalf("reset time drift should not create previous: %#v", estimate.Previous)
+		}
+		if _, ok := updates["codex_7d_quota_estimate_prev_min"]; ok {
+			t.Fatalf("did not expect previous update: %#v", updates)
+		}
+	})
+
 	t.Run("inside range does not update", func(t *testing.T) {
 		progress := &UsageProgress{
 			Utilization: 50,
@@ -423,7 +451,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		}
 	})
 
-	t.Run("lower coverage does not replace existing range", func(t *testing.T) {
+	t.Run("lower coverage starts new period and records previous", func(t *testing.T) {
 		progress := &UsageProgress{
 			Utilization: 25,
 			ResetsAt:    &activeReset,
@@ -438,11 +466,17 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_7d_quota_estimate_period_key":    activePeriod,
 		}, progress, "7d", now)
 
-		if estimate.Min != 15 || estimate.Max != 18 {
-			t.Fatalf("estimate = %#v, want existing range", estimate)
+		if estimate == nil || estimate.Min != 12 || estimate.Max != 12 {
+			t.Fatalf("estimate = %#v, want current min=max=12", estimate)
 		}
-		if len(updates) != 0 {
-			t.Fatalf("expected no updates, got %#v", updates)
+		if estimate.CoverageFrom != 20 || estimate.CoverageTo != 30 {
+			t.Fatalf("estimate coverage = %#v, want 20-30", estimate)
+		}
+		if estimate.Previous == nil || estimate.Previous.Min != 15 || estimate.Previous.Max != 18 {
+			t.Fatalf("previous estimate = %#v, want 15-18", estimate.Previous)
+		}
+		if updates["codex_7d_quota_estimate_prev_min"] != 15.0 || updates["codex_7d_quota_estimate_prev_max"] != 18.0 {
+			t.Fatalf("unexpected previous updates: %#v", updates)
 		}
 	})
 
@@ -531,6 +565,35 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			t.Fatalf("estimate = %#v, want existing previous-period current estimate", estimate)
 		}
 		if len(updates) != 0 {
+			t.Fatalf("expected no updates, got %#v", updates)
+		}
+	})
+
+	t.Run("future previous period is hidden from returned estimate", func(t *testing.T) {
+		futurePreviousPeriod := now.Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_quota_estimate_min":                90.0,
+			"codex_7d_quota_estimate_max":                100.0,
+			"codex_7d_quota_estimate_updated_at":         "2026-03-16T09:00:00Z",
+			"codex_7d_quota_estimate_coverage_from":      90.0,
+			"codex_7d_quota_estimate_coverage_to":        100.0,
+			"codex_7d_quota_estimate_period_key":         activePeriod,
+			"codex_7d_quota_estimate_prev_min":           80.0,
+			"codex_7d_quota_estimate_prev_max":           100.0,
+			"codex_7d_quota_estimate_prev_updated_at":    "2026-03-16T09:30:00Z",
+			"codex_7d_quota_estimate_prev_coverage_from": 80.0,
+			"codex_7d_quota_estimate_prev_coverage_to":   90.0,
+			"codex_7d_quota_estimate_prev_period_key":    futurePreviousPeriod,
+		}, nil, "7d", now)
+
+		if estimate == nil {
+			t.Fatal("expected estimate")
+		}
+		if estimate.Previous != nil {
+			t.Fatalf("future previous period should be hidden, got %#v", estimate.Previous)
+		}
+		if updates != nil {
 			t.Fatalf("expected no updates, got %#v", updates)
 		}
 	})
