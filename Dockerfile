@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # =============================================================================
 # Sub2API Multi-Stage Dockerfile
 # =============================================================================
@@ -7,33 +8,37 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.4-alpine
+ARG GOLANG_IMAGE=golang:1.26.5-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG PNPM_VERSION=9.15.9
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
+ARG NPM_CONFIG_REGISTRY=
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
 # -----------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-builder
-
 ARG PNPM_VERSION
 ARG NPM_REGISTRY
+ARG NPM_CONFIG_REGISTRY
 
 WORKDIR /app/frontend
-ENV NODE_OPTIONS=--max-old-space-size=4096 \
-    npm_config_registry=${NPM_REGISTRY} \
-    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
-# Install pnpm from a pinned v9 release without Corepack's major-version lookup.
-RUN npm install -g "pnpm@${PNPM_VERSION}" --registry="${NPM_REGISTRY}" && pnpm --version
+# Install the exact pnpm release used by the fork's build workflow.
+RUN REGISTRY="${NPM_CONFIG_REGISTRY:-${NPM_REGISTRY}}" && \
+    npm install -g "pnpm@${PNPM_VERSION}" --registry="${REGISTRY}" && \
+    pnpm --version
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --registry="${NPM_REGISTRY}"
+RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \
+    REGISTRY="${NPM_CONFIG_REGISTRY:-${NPM_REGISTRY}}" && \
+    pnpm config set registry "${REGISTRY}" && \
+    pnpm install --frozen-lockfile --prefer-offline
 
 # Copy frontend source and build.
 # LegalDocumentView.vue (admin-compliance gate) build-time imports
