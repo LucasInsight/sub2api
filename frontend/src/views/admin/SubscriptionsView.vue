@@ -443,6 +443,14 @@
                 <span class="text-xs">{{ t('admin.subscriptions.revoke') }}</span>
               </button>
               <button
+                v-if="row.status === 'active'"
+                @click="handleUpgrade(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+              >
+                <Icon name="trendingUp" size="sm" />
+                <span class="text-xs">{{ t('admin.subscriptions.upgrade') }}</span>
+              </button>
+              <button
                 v-if="row.status === 'revoked'"
                 @click="handleRestore(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400"
@@ -679,6 +687,14 @@
       </template>
     </BaseDialog>
 
+    <SubscriptionUpgradeDialog
+      :show="upgradingSubscription !== null"
+      :subscription="upgradingSubscription"
+      :groups="groups"
+      @close="upgradingSubscription = null"
+      @upgraded="handleSubscriptionUpgraded"
+    />
+
     <!-- Revoke Confirmation Dialog -->
     <ConfirmDialog
       :show="showRevokeDialog"
@@ -815,6 +831,7 @@ import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import Icon from '@/components/icons/Icon.vue'
+import SubscriptionUpgradeDialog from '@/components/admin/subscription/SubscriptionUpgradeDialog.vue'
 import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
 
 const { t } = useI18n()
@@ -1005,6 +1022,7 @@ const resettingQuota = ref(false)
 const extendingSubscription = ref<UserSubscription | null>(null)
 const revokingSubscription = ref<UserSubscription | null>(null)
 const restoringSubscription = ref<UserSubscription | null>(null)
+const upgradingSubscription = ref<UserSubscription | null>(null)
 
 const assignForm = reactive({
   user_id: null as number | null,
@@ -1303,6 +1321,15 @@ const handleExtendSubscription = async () => {
 const handleRevoke = (subscription: UserSubscription) => {
   revokingSubscription.value = subscription
   showRevokeDialog.value = true
+}
+
+const handleUpgrade = (subscription: UserSubscription) => {
+  upgradingSubscription.value = subscription
+}
+
+const handleSubscriptionUpgraded = async () => {
+  upgradingSubscription.value = null
+  await loadSubscriptions()
 }
 
 const confirmRevoke = async () => {
