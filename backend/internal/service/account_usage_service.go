@@ -1313,6 +1313,14 @@ type codexQuotaEstimateSampleData struct {
 	PeriodKey    string
 }
 
+type codexQuotaEstimatePeriodRelation uint8
+
+const (
+	codexQuotaEstimateSamePeriod codexQuotaEstimatePeriodRelation = iota
+	codexQuotaEstimateNextPeriod
+	codexQuotaEstimateSkippedPeriods
+)
+
 func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgress, window string, now time.Time) (*QuotaEstimate, map[string]any) {
 	estimate := sanitizeQuotaEstimateForNow(quotaEstimateFromExtra(extra, window), now)
 	if progress == nil {
@@ -1329,7 +1337,19 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
 	}
 
-	if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
+	periodRelation, periodComparable := compareCodexQuotaEstimatePeriods(extra, window, estimate.PeriodKey, sample.PeriodKey)
+	if periodComparable {
+		switch periodRelation {
+		case codexQuotaEstimateNextPeriod:
+			return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
+		case codexQuotaEstimateSkippedPeriods:
+			return newCodexQuotaEstimate(window, sample, updatedAt, nil)
+		case codexQuotaEstimateSamePeriod:
+			if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
+				return estimate, nil
+			}
+		}
+	} else if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
 		return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
 	}
 	if estimate.CoverageFrom <= 0 || sample.CoverageFrom > estimate.CoverageFrom {
@@ -1337,6 +1357,10 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 	}
 
 	updates := make(map[string]any)
+	if !periodComparable && validCodexQuotaEstimatePeriodKey(sample.PeriodKey) && !validCodexQuotaEstimatePeriodKey(estimate.PeriodKey) {
+		estimate.PeriodKey = sample.PeriodKey
+		updates[codexQuotaEstimatePeriodKeyKey(window)] = sample.PeriodKey
+	}
 	if sample.Value < estimate.Min {
 		estimate.Min = sample.Value
 		updates[codexQuotaEstimateMinKey(window)] = sample.Value
@@ -1351,6 +1375,56 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 	estimate.UpdatedAt = updatedAt
 	updates[codexQuotaEstimateUpdatedAtKey(window)] = updatedAt
 	return estimate, updates
+}
+
+func compareCodexQuotaEstimatePeriods(extra map[string]any, window, currentKey, sampleKey string) (codexQuotaEstimatePeriodRelation, bool) {
+	currentPeriod, err := parseTime(currentKey)
+	if err != nil {
+		return codexQuotaEstimateSamePeriod, false
+	}
+	samplePeriod, err := parseTime(sampleKey)
+	if err != nil {
+		return codexQuotaEstimateSamePeriod, false
+	}
+	windowDuration := codexQuotaEstimateWindowDuration(extra, window)
+	if windowDuration <= 0 {
+		return codexQuotaEstimateSamePeriod, false
+	}
+
+	advance := samplePeriod.Sub(currentPeriod)
+	if advance < windowDuration/2 {
+		return codexQuotaEstimateSamePeriod, true
+	}
+	if advance >= windowDuration+windowDuration/2 {
+		return codexQuotaEstimateSkippedPeriods, true
+	}
+	return codexQuotaEstimateNextPeriod, true
+}
+
+func codexQuotaEstimateWindowDuration(extra map[string]any, window string) time.Duration {
+	minutes := parseExtraFloat64(extra[fmt.Sprintf("codex_%s_window_minutes", window)])
+	if minutes > 0 && minutes <= 365*24*60 && !math.IsNaN(minutes) && !math.IsInf(minutes, 0) {
+		if duration := time.Duration(minutes * float64(time.Minute)); duration > 0 {
+			return duration
+		}
+	}
+
+	switch window {
+	case "5h":
+		return 5 * time.Hour
+	case "7d":
+		return 7 * 24 * time.Hour
+	default:
+		return 0
+	}
+}
+
+func validCodexQuotaEstimatePeriodKey(periodKey string) bool {
+	if strings.TrimSpace(periodKey) == "" {
+		return false
+	}
+	_, err := parseTime(periodKey)
+	return err == nil
 }
 
 func sanitizeQuotaEstimateForNow(estimate *QuotaEstimate, now time.Time) *QuotaEstimate {
