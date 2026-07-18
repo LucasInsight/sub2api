@@ -160,6 +160,31 @@ func RateLimitResetAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldRateLimitResetAt, v))
 }
 
+// Codex7dObservedResetAt applies equality check predicate on the "codex_7d_observed_reset_at" field. It's identical to Codex7dObservedResetAtEQ.
+func Codex7dObservedResetAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodex7dObservedResetAt, v))
+}
+
+// CodexQuotaObservedAt applies equality check predicate on the "codex_quota_observed_at" field. It's identical to CodexQuotaObservedAtEQ.
+func CodexQuotaObservedAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexOfficialEarlyResetPending applies equality check predicate on the "codex_official_early_reset_pending" field. It's identical to CodexOfficialEarlyResetPendingEQ.
+func CodexOfficialEarlyResetPending(v bool) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetPending, v))
+}
+
+// CodexOfficialEarlyResetDetectedAt applies equality check predicate on the "codex_official_early_reset_detected_at" field. It's identical to CodexOfficialEarlyResetDetectedAtEQ.
+func CodexOfficialEarlyResetDetectedAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAt applies equality check predicate on the "codex_official_early_reset_handled_at" field. It's identical to CodexOfficialEarlyResetHandledAtEQ.
+func CodexOfficialEarlyResetHandledAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
 // OverloadUntil applies equality check predicate on the "overload_until" field. It's identical to OverloadUntilEQ.
 func OverloadUntil(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldOverloadUntil, v))
@@ -1203,6 +1228,216 @@ func RateLimitResetAtIsNil() predicate.Account {
 // RateLimitResetAtNotNil applies the NotNil predicate on the "rate_limit_reset_at" field.
 func RateLimitResetAtNotNil() predicate.Account {
 	return predicate.Account(sql.FieldNotNull(FieldRateLimitResetAt))
+}
+
+// Codex7dObservedResetAtEQ applies the EQ predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtNEQ applies the NEQ predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtIn applies the In predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCodex7dObservedResetAt, vs...))
+}
+
+// Codex7dObservedResetAtNotIn applies the NotIn predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCodex7dObservedResetAt, vs...))
+}
+
+// Codex7dObservedResetAtGT applies the GT predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtGTE applies the GTE predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtLT applies the LT predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtLTE applies the LTE predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCodex7dObservedResetAt, v))
+}
+
+// Codex7dObservedResetAtIsNil applies the IsNil predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCodex7dObservedResetAt))
+}
+
+// Codex7dObservedResetAtNotNil applies the NotNil predicate on the "codex_7d_observed_reset_at" field.
+func Codex7dObservedResetAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCodex7dObservedResetAt))
+}
+
+// CodexQuotaObservedAtEQ applies the EQ predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtNEQ applies the NEQ predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtIn applies the In predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCodexQuotaObservedAt, vs...))
+}
+
+// CodexQuotaObservedAtNotIn applies the NotIn predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCodexQuotaObservedAt, vs...))
+}
+
+// CodexQuotaObservedAtGT applies the GT predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtGTE applies the GTE predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtLT applies the LT predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtLTE applies the LTE predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCodexQuotaObservedAt, v))
+}
+
+// CodexQuotaObservedAtIsNil applies the IsNil predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCodexQuotaObservedAt))
+}
+
+// CodexQuotaObservedAtNotNil applies the NotNil predicate on the "codex_quota_observed_at" field.
+func CodexQuotaObservedAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCodexQuotaObservedAt))
+}
+
+// CodexOfficialEarlyResetPendingEQ applies the EQ predicate on the "codex_official_early_reset_pending" field.
+func CodexOfficialEarlyResetPendingEQ(v bool) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetPending, v))
+}
+
+// CodexOfficialEarlyResetPendingNEQ applies the NEQ predicate on the "codex_official_early_reset_pending" field.
+func CodexOfficialEarlyResetPendingNEQ(v bool) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCodexOfficialEarlyResetPending, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtEQ applies the EQ predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtNEQ applies the NEQ predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtIn applies the In predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCodexOfficialEarlyResetDetectedAt, vs...))
+}
+
+// CodexOfficialEarlyResetDetectedAtNotIn applies the NotIn predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCodexOfficialEarlyResetDetectedAt, vs...))
+}
+
+// CodexOfficialEarlyResetDetectedAtGT applies the GT predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtGTE applies the GTE predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtLT applies the LT predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtLTE applies the LTE predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCodexOfficialEarlyResetDetectedAt, v))
+}
+
+// CodexOfficialEarlyResetDetectedAtIsNil applies the IsNil predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCodexOfficialEarlyResetDetectedAt))
+}
+
+// CodexOfficialEarlyResetDetectedAtNotNil applies the NotNil predicate on the "codex_official_early_reset_detected_at" field.
+func CodexOfficialEarlyResetDetectedAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCodexOfficialEarlyResetDetectedAt))
+}
+
+// CodexOfficialEarlyResetHandledAtEQ applies the EQ predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtNEQ applies the NEQ predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtIn applies the In predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCodexOfficialEarlyResetHandledAt, vs...))
+}
+
+// CodexOfficialEarlyResetHandledAtNotIn applies the NotIn predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCodexOfficialEarlyResetHandledAt, vs...))
+}
+
+// CodexOfficialEarlyResetHandledAtGT applies the GT predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtGTE applies the GTE predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtLT applies the LT predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtLTE applies the LTE predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCodexOfficialEarlyResetHandledAt, v))
+}
+
+// CodexOfficialEarlyResetHandledAtIsNil applies the IsNil predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCodexOfficialEarlyResetHandledAt))
+}
+
+// CodexOfficialEarlyResetHandledAtNotNil applies the NotNil predicate on the "codex_official_early_reset_handled_at" field.
+func CodexOfficialEarlyResetHandledAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCodexOfficialEarlyResetHandledAt))
 }
 
 // OverloadUntilEQ applies the EQ predicate on the "overload_until" field.

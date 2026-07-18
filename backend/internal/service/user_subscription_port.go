@@ -39,3 +39,23 @@ type UserSubscriptionRepository interface {
 
 	BatchUpdateExpiredStatus(ctx context.Context) (int64, error)
 }
+
+// ActiveUserSubscriptionQuotaResetRepository is the bounded extension used by
+// the global admin reset flow. Keeping it separate avoids broadening every
+// gateway-facing UserSubscriptionRepository test double.
+type ActiveUserSubscriptionQuotaResetRepository interface {
+	ListAllActiveForQuotaReset(ctx context.Context, now time.Time) ([]UserSubscription, error)
+}
+
+type OpenAIOfficial7dResetState struct {
+	AccountID  int64
+	DetectedAt time.Time
+}
+
+// OpenAIOfficial7dResetRepository persists authoritative 7d window
+// observations and coordinates consumption of pending early-reset events.
+type OpenAIOfficial7dResetRepository interface {
+	ObserveOpenAI7dReset(ctx context.Context, accountID int64, observedAt, resetAt time.Time, boundaryGrace time.Duration) (bool, error)
+	ListPendingOpenAIOfficial7dResets(ctx context.Context) ([]OpenAIOfficial7dResetState, error)
+	MarkOpenAIOfficial7dResetsHandled(ctx context.Context, accountIDs []int64, handledAt time.Time) error
+}

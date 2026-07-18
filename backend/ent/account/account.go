@@ -62,6 +62,16 @@ const (
 	FieldRateLimitedAt = "rate_limited_at"
 	// FieldRateLimitResetAt holds the string denoting the rate_limit_reset_at field in the database.
 	FieldRateLimitResetAt = "rate_limit_reset_at"
+	// FieldCodex7dObservedResetAt holds the string denoting the codex_7d_observed_reset_at field in the database.
+	FieldCodex7dObservedResetAt = "codex_7d_observed_reset_at"
+	// FieldCodexQuotaObservedAt holds the string denoting the codex_quota_observed_at field in the database.
+	FieldCodexQuotaObservedAt = "codex_quota_observed_at"
+	// FieldCodexOfficialEarlyResetPending holds the string denoting the codex_official_early_reset_pending field in the database.
+	FieldCodexOfficialEarlyResetPending = "codex_official_early_reset_pending"
+	// FieldCodexOfficialEarlyResetDetectedAt holds the string denoting the codex_official_early_reset_detected_at field in the database.
+	FieldCodexOfficialEarlyResetDetectedAt = "codex_official_early_reset_detected_at"
+	// FieldCodexOfficialEarlyResetHandledAt holds the string denoting the codex_official_early_reset_handled_at field in the database.
+	FieldCodexOfficialEarlyResetHandledAt = "codex_official_early_reset_handled_at"
 	// FieldOverloadUntil holds the string denoting the overload_until field in the database.
 	FieldOverloadUntil = "overload_until"
 	// FieldTempUnschedulableUntil holds the string denoting the temp_unschedulable_until field in the database.
@@ -154,6 +164,11 @@ var Columns = []string{
 	FieldSchedulable,
 	FieldRateLimitedAt,
 	FieldRateLimitResetAt,
+	FieldCodex7dObservedResetAt,
+	FieldCodexQuotaObservedAt,
+	FieldCodexOfficialEarlyResetPending,
+	FieldCodexOfficialEarlyResetDetectedAt,
+	FieldCodexOfficialEarlyResetHandledAt,
 	FieldOverloadUntil,
 	FieldTempUnschedulableUntil,
 	FieldTempUnschedulableReason,
@@ -218,6 +233,8 @@ var (
 	DefaultAutoPauseOnExpired bool
 	// DefaultSchedulable holds the default value on creation for the "schedulable" field.
 	DefaultSchedulable bool
+	// DefaultCodexOfficialEarlyResetPending holds the default value on creation for the "codex_official_early_reset_pending" field.
+	DefaultCodexOfficialEarlyResetPending bool
 	// SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	SessionWindowStatusValidator func(string) error
 )
@@ -359,6 +376,31 @@ func ByRateLimitedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByRateLimitResetAt orders the results by the rate_limit_reset_at field.
 func ByRateLimitResetAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRateLimitResetAt, opts...).ToFunc()
+}
+
+// ByCodex7dObservedResetAt orders the results by the codex_7d_observed_reset_at field.
+func ByCodex7dObservedResetAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCodex7dObservedResetAt, opts...).ToFunc()
+}
+
+// ByCodexQuotaObservedAt orders the results by the codex_quota_observed_at field.
+func ByCodexQuotaObservedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCodexQuotaObservedAt, opts...).ToFunc()
+}
+
+// ByCodexOfficialEarlyResetPending orders the results by the codex_official_early_reset_pending field.
+func ByCodexOfficialEarlyResetPending(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCodexOfficialEarlyResetPending, opts...).ToFunc()
+}
+
+// ByCodexOfficialEarlyResetDetectedAt orders the results by the codex_official_early_reset_detected_at field.
+func ByCodexOfficialEarlyResetDetectedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCodexOfficialEarlyResetDetectedAt, opts...).ToFunc()
+}
+
+// ByCodexOfficialEarlyResetHandledAt orders the results by the codex_official_early_reset_handled_at field.
+func ByCodexOfficialEarlyResetHandledAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCodexOfficialEarlyResetHandledAt, opts...).ToFunc()
 }
 
 // ByOverloadUntil orders the results by the overload_until field.

@@ -65,6 +65,16 @@ type Account struct {
 	RateLimitedAt *time.Time `json:"rate_limited_at,omitempty"`
 	// RateLimitResetAt holds the value of the "rate_limit_reset_at" field.
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty"`
+	// Codex7dObservedResetAt holds the value of the "codex_7d_observed_reset_at" field.
+	Codex7dObservedResetAt *time.Time `json:"codex_7d_observed_reset_at,omitempty"`
+	// CodexQuotaObservedAt holds the value of the "codex_quota_observed_at" field.
+	CodexQuotaObservedAt *time.Time `json:"codex_quota_observed_at,omitempty"`
+	// CodexOfficialEarlyResetPending holds the value of the "codex_official_early_reset_pending" field.
+	CodexOfficialEarlyResetPending bool `json:"codex_official_early_reset_pending,omitempty"`
+	// CodexOfficialEarlyResetDetectedAt holds the value of the "codex_official_early_reset_detected_at" field.
+	CodexOfficialEarlyResetDetectedAt *time.Time `json:"codex_official_early_reset_detected_at,omitempty"`
+	// CodexOfficialEarlyResetHandledAt holds the value of the "codex_official_early_reset_handled_at" field.
+	CodexOfficialEarlyResetHandledAt *time.Time `json:"codex_official_early_reset_handled_at,omitempty"`
 	// OverloadUntil holds the value of the "overload_until" field.
 	OverloadUntil *time.Time `json:"overload_until,omitempty"`
 	// TempUnschedulableUntil holds the value of the "temp_unschedulable_until" field.
@@ -171,7 +181,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case account.FieldCredentials, account.FieldExtra:
 			values[i] = new([]byte)
-		case account.FieldAutoPauseOnExpired, account.FieldSchedulable:
+		case account.FieldAutoPauseOnExpired, account.FieldSchedulable, account.FieldCodexOfficialEarlyResetPending:
 			values[i] = new(sql.NullBool)
 		case account.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
@@ -179,7 +189,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
-		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
+		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldCodex7dObservedResetAt, account.FieldCodexQuotaObservedAt, account.FieldCodexOfficialEarlyResetDetectedAt, account.FieldCodexOfficialEarlyResetHandledAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -353,6 +363,40 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RateLimitResetAt = new(time.Time)
 				*_m.RateLimitResetAt = value.Time
+			}
+		case account.FieldCodex7dObservedResetAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field codex_7d_observed_reset_at", values[i])
+			} else if value.Valid {
+				_m.Codex7dObservedResetAt = new(time.Time)
+				*_m.Codex7dObservedResetAt = value.Time
+			}
+		case account.FieldCodexQuotaObservedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field codex_quota_observed_at", values[i])
+			} else if value.Valid {
+				_m.CodexQuotaObservedAt = new(time.Time)
+				*_m.CodexQuotaObservedAt = value.Time
+			}
+		case account.FieldCodexOfficialEarlyResetPending:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field codex_official_early_reset_pending", values[i])
+			} else if value.Valid {
+				_m.CodexOfficialEarlyResetPending = value.Bool
+			}
+		case account.FieldCodexOfficialEarlyResetDetectedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field codex_official_early_reset_detected_at", values[i])
+			} else if value.Valid {
+				_m.CodexOfficialEarlyResetDetectedAt = new(time.Time)
+				*_m.CodexOfficialEarlyResetDetectedAt = value.Time
+			}
+		case account.FieldCodexOfficialEarlyResetHandledAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field codex_official_early_reset_handled_at", values[i])
+			} else if value.Valid {
+				_m.CodexOfficialEarlyResetHandledAt = new(time.Time)
+				*_m.CodexOfficialEarlyResetHandledAt = value.Time
 			}
 		case account.FieldOverloadUntil:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -561,6 +605,29 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	if v := _m.RateLimitResetAt; v != nil {
 		builder.WriteString("rate_limit_reset_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.Codex7dObservedResetAt; v != nil {
+		builder.WriteString("codex_7d_observed_reset_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.CodexQuotaObservedAt; v != nil {
+		builder.WriteString("codex_quota_observed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("codex_official_early_reset_pending=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CodexOfficialEarlyResetPending))
+	builder.WriteString(", ")
+	if v := _m.CodexOfficialEarlyResetDetectedAt; v != nil {
+		builder.WriteString("codex_official_early_reset_detected_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.CodexOfficialEarlyResetHandledAt; v != nil {
+		builder.WriteString("codex_official_early_reset_handled_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

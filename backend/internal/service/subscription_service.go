@@ -40,6 +40,9 @@ var (
 	ErrMonthlyLimitExceeded        = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
 	ErrSubscriptionNilInput        = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
 	ErrAdjustWouldExpire           = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
+	ErrOfficialEarlyResetRequired  = infraerrors.Conflict("OFFICIAL_EARLY_RESET_REQUIRED", "an unhandled OpenAI 7-day early reset is required")
+	ErrNoActiveSubscriptions       = infraerrors.Conflict("NO_ACTIVE_SUBSCRIPTIONS", "no active subscriptions are available to reset")
+	ErrResetAllQuotaUnavailable    = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
 )
 
 // SubscriptionService 订阅服务
@@ -49,6 +52,7 @@ type SubscriptionService struct {
 	apiKeyRepo           APIKeyRepository
 	billingCacheService  *BillingCacheService
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	official7dResetRepo  OpenAIOfficial7dResetRepository
 	entClient            *dbent.Client
 
 	// L1 缓存：加速中间件热路径的订阅查询
@@ -851,7 +855,13 @@ func (s *SubscriptionService) CheckAndActivateWindow(ctx context.Context, sub *U
 
 // AdminResetQuota manually resets selected usage windows.
 func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionID int64, resetFiveHour, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error) {
-	if !resetFiveHour && !resetDaily && !resetWeekly && !resetMonthly {
+	windows := subscriptionQuotaResetWindows{
+		fiveHour: resetFiveHour,
+		daily:    resetDaily,
+		weekly:   resetWeekly,
+		monthly:  resetMonthly,
+	}
+	if !windows.any() {
 		return nil, ErrInvalidInput
 	}
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
@@ -859,24 +869,10 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 		return nil, err
 	}
 	now := time.Now()
-	windowStart := startOfDay(now)
-	if resetFiveHour {
-		if err := s.userSubRepo.ResetFiveHourUsage(ctx, sub.ID, now); err != nil {
-			return nil, err
-		}
+	if err := s.resetSubscriptionQuotaWindows(ctx, sub, windows, now); err != nil {
+		return nil, err
 	}
-	if resetDaily || resetWeekly || resetMonthly {
-		if err := s.userSubRepo.ResetUsageWindows(ctx, sub.ID, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
-			return nil, err
-		}
-	}
-	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
-	// so call Wait() immediately after to flush pending operations and guarantee
-	// the deleted key is not returned on the very next Get() call.
-	s.InvalidateSubCacheSync(sub.UserID, sub.GroupID)
-	if s.billingCacheService != nil {
-		_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
-	}
+	s.invalidateQuotaResetCaches([]subscriptionQuotaResetCacheTarget{{userID: sub.UserID, groupID: sub.GroupID}})
 	// Return the refreshed subscription from DB
 	return s.userSubRepo.GetByID(ctx, subscriptionID)
 }

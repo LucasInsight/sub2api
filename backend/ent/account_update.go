@@ -410,6 +410,100 @@ func (_u *AccountUpdate) ClearRateLimitResetAt() *AccountUpdate {
 	return _u
 }
 
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (_u *AccountUpdate) SetCodex7dObservedResetAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCodex7dObservedResetAt(v)
+	return _u
+}
+
+// SetNillableCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCodex7dObservedResetAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCodex7dObservedResetAt(*v)
+	}
+	return _u
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (_u *AccountUpdate) ClearCodex7dObservedResetAt() *AccountUpdate {
+	_u.mutation.ClearCodex7dObservedResetAt()
+	return _u
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (_u *AccountUpdate) SetCodexQuotaObservedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCodexQuotaObservedAt(v)
+	return _u
+}
+
+// SetNillableCodexQuotaObservedAt sets the "codex_quota_observed_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCodexQuotaObservedAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCodexQuotaObservedAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (_u *AccountUpdate) ClearCodexQuotaObservedAt() *AccountUpdate {
+	_u.mutation.ClearCodexQuotaObservedAt()
+	return _u
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (_u *AccountUpdate) SetCodexOfficialEarlyResetPending(v bool) *AccountUpdate {
+	_u.mutation.SetCodexOfficialEarlyResetPending(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCodexOfficialEarlyResetPending(v *bool) *AccountUpdate {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetPending(*v)
+	}
+	return _u
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (_u *AccountUpdate) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCodexOfficialEarlyResetDetectedAt(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCodexOfficialEarlyResetDetectedAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetDetectedAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (_u *AccountUpdate) ClearCodexOfficialEarlyResetDetectedAt() *AccountUpdate {
+	_u.mutation.ClearCodexOfficialEarlyResetDetectedAt()
+	return _u
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (_u *AccountUpdate) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCodexOfficialEarlyResetHandledAt(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCodexOfficialEarlyResetHandledAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetHandledAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (_u *AccountUpdate) ClearCodexOfficialEarlyResetHandledAt() *AccountUpdate {
+	_u.mutation.ClearCodexOfficialEarlyResetHandledAt()
+	return _u
+}
+
 // SetOverloadUntil sets the "overload_until" field.
 func (_u *AccountUpdate) SetOverloadUntil(v time.Time) *AccountUpdate {
 	_u.mutation.SetOverloadUntil(v)
@@ -906,6 +1000,33 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.RateLimitResetAtCleared() {
 		_spec.ClearField(account.FieldRateLimitResetAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Codex7dObservedResetAt(); ok {
+		_spec.SetField(account.FieldCodex7dObservedResetAt, field.TypeTime, value)
+	}
+	if _u.mutation.Codex7dObservedResetAtCleared() {
+		_spec.ClearField(account.FieldCodex7dObservedResetAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexQuotaObservedAt(); ok {
+		_spec.SetField(account.FieldCodexQuotaObservedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexQuotaObservedAtCleared() {
+		_spec.ClearField(account.FieldCodexQuotaObservedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetPending(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetPending, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetDetectedAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetDetectedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexOfficialEarlyResetDetectedAtCleared() {
+		_spec.ClearField(account.FieldCodexOfficialEarlyResetDetectedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetHandledAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetHandledAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexOfficialEarlyResetHandledAtCleared() {
+		_spec.ClearField(account.FieldCodexOfficialEarlyResetHandledAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.OverloadUntil(); ok {
 		_spec.SetField(account.FieldOverloadUntil, field.TypeTime, value)
@@ -1550,6 +1671,100 @@ func (_u *AccountUpdateOne) ClearRateLimitResetAt() *AccountUpdateOne {
 	return _u
 }
 
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (_u *AccountUpdateOne) SetCodex7dObservedResetAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCodex7dObservedResetAt(v)
+	return _u
+}
+
+// SetNillableCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCodex7dObservedResetAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCodex7dObservedResetAt(*v)
+	}
+	return _u
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (_u *AccountUpdateOne) ClearCodex7dObservedResetAt() *AccountUpdateOne {
+	_u.mutation.ClearCodex7dObservedResetAt()
+	return _u
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (_u *AccountUpdateOne) SetCodexQuotaObservedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCodexQuotaObservedAt(v)
+	return _u
+}
+
+// SetNillableCodexQuotaObservedAt sets the "codex_quota_observed_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCodexQuotaObservedAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCodexQuotaObservedAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (_u *AccountUpdateOne) ClearCodexQuotaObservedAt() *AccountUpdateOne {
+	_u.mutation.ClearCodexQuotaObservedAt()
+	return _u
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (_u *AccountUpdateOne) SetCodexOfficialEarlyResetPending(v bool) *AccountUpdateOne {
+	_u.mutation.SetCodexOfficialEarlyResetPending(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCodexOfficialEarlyResetPending(v *bool) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetPending(*v)
+	}
+	return _u
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (_u *AccountUpdateOne) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCodexOfficialEarlyResetDetectedAt(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCodexOfficialEarlyResetDetectedAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetDetectedAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (_u *AccountUpdateOne) ClearCodexOfficialEarlyResetDetectedAt() *AccountUpdateOne {
+	_u.mutation.ClearCodexOfficialEarlyResetDetectedAt()
+	return _u
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (_u *AccountUpdateOne) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCodexOfficialEarlyResetHandledAt(v)
+	return _u
+}
+
+// SetNillableCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCodexOfficialEarlyResetHandledAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCodexOfficialEarlyResetHandledAt(*v)
+	}
+	return _u
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (_u *AccountUpdateOne) ClearCodexOfficialEarlyResetHandledAt() *AccountUpdateOne {
+	_u.mutation.ClearCodexOfficialEarlyResetHandledAt()
+	return _u
+}
+
 // SetOverloadUntil sets the "overload_until" field.
 func (_u *AccountUpdateOne) SetOverloadUntil(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetOverloadUntil(v)
@@ -2076,6 +2291,33 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if _u.mutation.RateLimitResetAtCleared() {
 		_spec.ClearField(account.FieldRateLimitResetAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Codex7dObservedResetAt(); ok {
+		_spec.SetField(account.FieldCodex7dObservedResetAt, field.TypeTime, value)
+	}
+	if _u.mutation.Codex7dObservedResetAtCleared() {
+		_spec.ClearField(account.FieldCodex7dObservedResetAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexQuotaObservedAt(); ok {
+		_spec.SetField(account.FieldCodexQuotaObservedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexQuotaObservedAtCleared() {
+		_spec.ClearField(account.FieldCodexQuotaObservedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetPending(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetPending, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetDetectedAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetDetectedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexOfficialEarlyResetDetectedAtCleared() {
+		_spec.ClearField(account.FieldCodexOfficialEarlyResetDetectedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CodexOfficialEarlyResetHandledAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetHandledAt, field.TypeTime, value)
+	}
+	if _u.mutation.CodexOfficialEarlyResetHandledAtCleared() {
+		_spec.ClearField(account.FieldCodexOfficialEarlyResetHandledAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.OverloadUntil(); ok {
 		_spec.SetField(account.FieldOverloadUntil, field.TypeTime, value)

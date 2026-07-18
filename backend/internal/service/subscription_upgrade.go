@@ -38,6 +38,7 @@ func ProvideSubscriptionService(
 	groupRepo GroupRepository,
 	userSubRepo UserSubscriptionRepository,
 	apiKeyRepo APIKeyRepository,
+	accountRepo AccountRepository,
 	billingCacheService *BillingCacheService,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	entClient *dbent.Client,
@@ -46,6 +47,9 @@ func ProvideSubscriptionService(
 	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
 	svc.apiKeyRepo = apiKeyRepo
 	svc.authCacheInvalidator = authCacheInvalidator
+	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
+		svc.official7dResetRepo = tracker
+	}
 	return svc
 }
 

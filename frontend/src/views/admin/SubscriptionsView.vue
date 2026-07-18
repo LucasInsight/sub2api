@@ -94,7 +94,7 @@
           <!-- Right: Actions -->
           <div class="ml-auto flex flex-wrap items-center justify-end gap-3">
             <button
-              @click="loadSubscriptions"
+              @click="refreshPage"
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
@@ -158,6 +158,17 @@
               :title="t('admin.subscriptions.guide.showGuide')"
             >
               <Icon name="questionCircle" size="md" />
+            </button>
+            <button
+              type="button"
+              data-testid="reset-all-quota-button"
+              class="btn btn-secondary text-orange-600 disabled:text-gray-400 dark:text-orange-400 dark:disabled:text-gray-500"
+              :disabled="!canResetAllQuota"
+              :title="resetAllQuotaButtonTitle"
+              @click="showResetAllQuotaConfirm = true"
+            >
+              <Icon name="refresh" size="md" class="mr-2" />
+              {{ t('admin.subscriptions.resetAllQuota') }}
             </button>
             <button @click="showAssignModal = true" class="btn btn-primary">
               <Icon name="plus" size="md" class="mr-2" />
@@ -728,6 +739,16 @@
       @confirm="confirmResetQuota"
       @cancel="showResetQuotaConfirm = false"
     />
+    <ConfirmDialog
+      :show="showResetAllQuotaConfirm"
+      :title="t('admin.subscriptions.resetAllQuotaTitle')"
+      :message="t('admin.subscriptions.resetAllQuotaConfirm', { count: resetAllQuotaStatus?.active_subscription_count ?? 0 })"
+      :confirm-text="t('admin.subscriptions.resetAllQuota')"
+      :cancel-text="t('common.cancel')"
+      :danger="true"
+      @confirm="confirmResetAllQuota"
+      @cancel="showResetAllQuotaConfirm = false"
+    />
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
@@ -815,6 +836,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import type { ResetAllQuotaStatus } from '@/api/admin/subscriptions'
 import type { UserSubscription, Group, GroupPlatform, SubscriptionType } from '@/types'
 import type { SimpleUser } from '@/api/admin/usage'
 import type { Column } from '@/components/common/types'
@@ -1016,9 +1038,14 @@ const showExtendModal = ref(false)
 const showRevokeDialog = ref(false)
 const showRestoreDialog = ref(false)
 const showResetQuotaConfirm = ref(false)
+const showResetAllQuotaConfirm = ref(false)
 const submitting = ref(false)
 const resettingSubscription = ref<UserSubscription | null>(null)
 const resettingQuota = ref(false)
+const resettingAllQuota = ref(false)
+const loadingResetAllQuotaStatus = ref(false)
+const resetAllQuotaStatus = ref<ResetAllQuotaStatus | null>(null)
+const resetAllQuotaStatusFailed = ref(false)
 const extendingSubscription = ref<UserSubscription | null>(null)
 const revokingSubscription = ref<UserSubscription | null>(null)
 const restoringSubscription = ref<UserSubscription | null>(null)
@@ -1047,6 +1074,23 @@ const platformFilterOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' }
 ])
+
+const canResetAllQuota = computed(
+  () => Boolean(resetAllQuotaStatus.value?.enabled) && !loadingResetAllQuotaStatus.value && !resettingAllQuota.value
+)
+
+const resetAllQuotaButtonTitle = computed(() => {
+  if (resettingAllQuota.value) return t('admin.subscriptions.resettingAllQuota')
+  if (loadingResetAllQuotaStatus.value) return t('admin.subscriptions.checkingResetAllQuota')
+  if (resetAllQuotaStatusFailed.value) return t('admin.subscriptions.resetAllQuotaStatusFailed')
+  if (resetAllQuotaStatus.value?.disabled_reason === 'no_active_subscriptions') {
+    return t('admin.subscriptions.resetAllQuotaNoActive')
+  }
+  if (!resetAllQuotaStatus.value?.enabled) return t('admin.subscriptions.resetAllQuotaLocked')
+  return t('admin.subscriptions.resetAllQuotaReady', {
+    count: resetAllQuotaStatus.value.active_subscription_count
+  })
+})
 
 // Group options for assign (only subscription type groups)
 const subscriptionGroupOptions = computed(() =>
@@ -1108,6 +1152,24 @@ const loadSubscriptions = async () => {
       abortController = null
     }
   }
+}
+
+const loadResetAllQuotaStatus = async () => {
+  loadingResetAllQuotaStatus.value = true
+  resetAllQuotaStatusFailed.value = false
+  try {
+    resetAllQuotaStatus.value = await adminAPI.subscriptions.getResetAllQuotaStatus()
+  } catch (error) {
+    resetAllQuotaStatus.value = null
+    resetAllQuotaStatusFailed.value = true
+    console.error('Error loading reset-all quota status:', error)
+  } finally {
+    loadingResetAllQuotaStatus.value = false
+  }
+}
+
+const refreshPage = async () => {
+  await Promise.all([loadSubscriptions(), loadResetAllQuotaStatus()])
 }
 
 const loadGroups = async () => {
@@ -1390,6 +1452,30 @@ const confirmResetQuota = async () => {
   }
 }
 
+const createResetAllQuotaIdempotencyKey = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `subscription-reset-all-${crypto.randomUUID()}`
+  }
+  return `subscription-reset-all-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const confirmResetAllQuota = async () => {
+  showResetAllQuotaConfirm.value = false
+  if (!canResetAllQuota.value || resettingAllQuota.value) return
+  resettingAllQuota.value = true
+  try {
+    const result = await adminAPI.subscriptions.resetAllQuota(createResetAllQuotaIdempotencyKey())
+    appStore.showSuccess(t('admin.subscriptions.resetAllQuotaSuccess', { count: result.reset_count }))
+    await refreshPage()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.subscriptions.failedToResetAllQuota'))
+    console.error('Error resetting all subscription quotas:', error)
+    await loadResetAllQuotaStatus()
+  } finally {
+    resettingAllQuota.value = false
+  }
+}
+
 // Helper functions
 const getDaysRemaining = (expiresAt: string): number | null => {
   const now = new Date()
@@ -1495,7 +1581,7 @@ const handleClickOutside = (event: MouseEvent) => {
 onMounted(() => {
   loadUserColumnMode()
   loadSavedColumns()
-  loadSubscriptions()
+  refreshPage()
   loadGroups()
   document.addEventListener('click', handleClickOutside)
 })
