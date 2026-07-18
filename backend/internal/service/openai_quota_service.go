@@ -34,6 +34,7 @@ const (
 	openaiQuotaSecFetchSite     = "none"
 	openaiQuotaSecFetchMode     = "no-cors"
 	openaiQuotaSecFetchDest     = "empty"
+	openaiOfficialResetGrace    = time.Minute
 )
 
 // OpenAIRateLimitWindow describes a single rate-limit window returned by
@@ -117,6 +118,7 @@ type OpenAIQuotaService struct {
 	proxyRepo            ProxyRepository
 	tokenProvider        *OpenAITokenProvider
 	privacyClientFactory PrivacyClientFactory
+	official7dResetRepo  OpenAIOfficial7dResetRepository
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
 }
@@ -130,12 +132,16 @@ func NewOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 ) *OpenAIQuotaService {
-	return &OpenAIQuotaService{
+	service := &OpenAIQuotaService{
 		accountRepo:          accountRepo,
 		proxyRepo:            proxyRepo,
 		tokenProvider:        tokenProvider,
 		privacyClientFactory: privacyClientFactory,
 	}
+	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
+		service.official7dResetRepo = tracker
+	}
+	return service
 }
 
 // QueryUsage fetches the latest rate-limit/usage snapshot for the given OpenAI
@@ -187,6 +193,7 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 	}
 
 	payload.FetchedAt = time.Now().Unix()
+	s.observeOfficial7dReset(ctx, accountID, &payload)
 	details := s.queryResetCreditDetails(callCtx, client, accessToken, chatGPTAccountID, fedRAMP, accountID)
 	if details != nil {
 		hasDetailCount := details.AvailableCount != nil
@@ -317,6 +324,40 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 		"windows_reset", payload.WindowsReset,
 	)
 	return &payload, nil
+}
+
+func (s *OpenAIQuotaService) observeOfficial7dReset(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage) {
+	if s == nil || s.official7dResetRepo == nil || usage == nil {
+		return
+	}
+	resetAt := openAIQuota7dResetAt(usage.RateLimit)
+	if resetAt == nil {
+		return
+	}
+	observedAt := time.Unix(usage.FetchedAt, 0).UTC()
+	detected, err := s.official7dResetRepo.ObserveOpenAI7dReset(ctx, accountID, observedAt, *resetAt, openaiOfficialResetGrace)
+	if err != nil {
+		slog.Warn("openai_official_7d_reset_observation_failed", "account_id", accountID, "error", err)
+		return
+	}
+	if detected {
+		slog.Info("openai_7d_early_reset_detected", "account_id", accountID, "reset_at", resetAt.Format(time.RFC3339))
+	}
+}
+
+func openAIQuota7dResetAt(rateLimit *OpenAIRateLimit) *time.Time {
+	if rateLimit == nil {
+		return nil
+	}
+	windows := []*OpenAIRateLimitWindow{rateLimit.PrimaryWindow, rateLimit.SecondaryWindow}
+	for _, window := range windows {
+		if window == nil || window.ResetAt <= 0 || time.Duration(window.LimitWindowSeconds)*time.Second != 7*24*time.Hour {
+			continue
+		}
+		resetAt := time.Unix(window.ResetAt, 0).UTC()
+		return &resetAt
+	}
+	return nil
 }
 
 // prepareUpstreamCall loads the account, validates it, obtains a fresh access

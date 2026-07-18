@@ -250,6 +250,33 @@ func (h *SubscriptionHandler) ResetQuota(c *gin.Context) {
 	response.Success(c, dto.UserSubscriptionFromServiceAdmin(sub))
 }
 
+// ResetAllQuotaStatus reports whether an unhandled OpenAI 7-day early reset
+// currently permits the global subscription reset action.
+// GET /api/v1/admin/subscriptions/reset-all-quota/status
+func (h *SubscriptionHandler) ResetAllQuotaStatus(c *gin.Context) {
+	status, err := h.subscriptionService.AdminResetAllQuotaStatus(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
+}
+
+// ResetAllQuota resets every active, unexpired user subscription and consumes
+// all pending OpenAI 7-day early-reset events atomically.
+// POST /api/v1/admin/subscriptions/reset-all-quota
+func (h *SubscriptionHandler) ResetAllQuota(c *gin.Context) {
+	executeAdminIdempotentJSON(
+		c,
+		"admin.subscriptions.reset_all_quota",
+		struct{}{},
+		service.DefaultWriteIdempotencyTTL(),
+		func(ctx context.Context) (any, error) {
+			return h.subscriptionService.AdminResetAllQuota(ctx)
+		},
+	)
+}
+
 // Revoke handles revoking a subscription.
 // POST /api/v1/admin/subscriptions/:id/revoke
 // DELETE /api/v1/admin/subscriptions/:id is kept for backward compatibility.

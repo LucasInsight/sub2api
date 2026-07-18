@@ -162,6 +162,27 @@ func (Account) Fields() []ent.Field {
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
+		// OpenAI/Codex 7d quota observation state. These fields are
+		// internal control-plane state and are intentionally not exposed by DTOs.
+		field.Time("codex_7d_observed_reset_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("codex_quota_observed_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Bool("codex_official_early_reset_pending").
+			Default(false),
+		field.Time("codex_official_early_reset_detected_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("codex_official_early_reset_handled_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+
 		// overload_until: 过载状态解除时间
 		// 当收到 529 错误（API 过载）时设置
 		field.Time("overload_until").
@@ -243,7 +264,8 @@ func (Account) Indexes() []ent.Index {
 		index.Fields("schedulable"),         // 筛选可调度账户
 		index.Fields("rate_limited_at"),     // 筛选速率限制账户
 		index.Fields("rate_limit_reset_at"), // 筛选速率限制解除时间
-		index.Fields("overload_until"),      // 筛选过载账户
+		index.Fields("codex_official_early_reset_pending"),
+		index.Fields("overload_until"), // 筛选过载账户
 		// 调度热路径复合索引（线上由 SQL 迁移创建部分索引，schema 仅用于模型可读性对齐）
 		index.Fields("platform", "priority"),
 		index.Fields("priority", "status"),

@@ -1456,6 +1456,7 @@ const (
 	codexQuotaEstimateBucketPercent      = 10.0
 	codexQuotaEstimateMinSignalCost      = 0.25
 	codexQuotaEstimateMinSignalRequests  = int64(3)
+	codexQuotaEstimatePeriodDrift        = time.Minute
 )
 
 type codexQuotaEstimateSampleData struct {
@@ -1474,38 +1475,44 @@ const (
 )
 
 func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgress, window string, now time.Time) (*QuotaEstimate, map[string]any) {
-	estimate := sanitizeQuotaEstimateForNow(quotaEstimateFromExtra(extra, window), now)
+	estimate, historyUpdates := normalizeCodexQuotaEstimateHistory(extra, quotaEstimateFromExtra(extra, window), window, now)
 	if progress == nil {
-		return estimate, nil
+		return estimate, historyUpdates
 	}
 
 	sample, ok := codexQuotaEstimateSample(progress, now)
 	if !ok {
-		return estimate, nil
+		return estimate, historyUpdates
 	}
 
 	updatedAt := now.UTC().Format(time.RFC3339)
 	if estimate == nil {
-		return newCodexQuotaEstimate(window, sample, updatedAt, nil)
+		next, updates := newCodexQuotaEstimate(window, sample, updatedAt, nil)
+		return next, mergeCodexQuotaEstimateUpdates(historyUpdates, updates)
 	}
 
 	periodRelation, periodComparable := compareCodexQuotaEstimatePeriods(extra, window, estimate.PeriodKey, sample.PeriodKey)
 	if periodComparable {
 		switch periodRelation {
 		case codexQuotaEstimateNextPeriod:
-			return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
+			next, updates := newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
+			next, normalizedUpdates := normalizeCodexQuotaEstimateHistory(extra, next, window, now)
+			return next, mergeCodexQuotaEstimateUpdates(historyUpdates, updates, normalizedUpdates)
 		case codexQuotaEstimateSkippedPeriods:
-			return newCodexQuotaEstimate(window, sample, updatedAt, nil)
+			next, updates := newCodexQuotaEstimate(window, sample, updatedAt, nil)
+			return next, mergeCodexQuotaEstimateUpdates(historyUpdates, updates)
 		case codexQuotaEstimateSamePeriod:
 			if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
-				return estimate, nil
+				return estimate, historyUpdates
 			}
 		}
 	} else if estimate.CoverageFrom > 0 && sample.CoverageFrom < estimate.CoverageFrom {
-		return newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
+		next, updates := newCodexQuotaEstimate(window, sample, updatedAt, quotaEstimateSnapshotFromCurrent(estimate))
+		return next, mergeCodexQuotaEstimateUpdates(historyUpdates, updates)
 	}
 	if estimate.CoverageFrom <= 0 || sample.CoverageFrom > estimate.CoverageFrom {
-		return newCodexQuotaEstimate(window, sample, updatedAt, estimate.Previous)
+		next, updates := newCodexQuotaEstimate(window, sample, updatedAt, estimate.Previous)
+		return next, mergeCodexQuotaEstimateUpdates(historyUpdates, updates)
 	}
 
 	updates := make(map[string]any)
@@ -1522,11 +1529,11 @@ func buildCodexQuotaEstimateUpdates(extra map[string]any, progress *UsageProgres
 		updates[codexQuotaEstimateMaxKey(window)] = sample.Value
 	}
 	if len(updates) == 0 {
-		return estimate, nil
+		return estimate, historyUpdates
 	}
 	estimate.UpdatedAt = updatedAt
 	updates[codexQuotaEstimateUpdatedAtKey(window)] = updatedAt
-	return estimate, updates
+	return estimate, mergeCodexQuotaEstimateUpdates(historyUpdates, updates)
 }
 
 func compareCodexQuotaEstimatePeriods(extra map[string]any, window, currentKey, sampleKey string) (codexQuotaEstimatePeriodRelation, bool) {
@@ -1544,7 +1551,7 @@ func compareCodexQuotaEstimatePeriods(extra map[string]any, window, currentKey, 
 	}
 
 	advance := samplePeriod.Sub(currentPeriod)
-	if advance < windowDuration/2 {
+	if advance <= codexQuotaEstimatePeriodDrift {
 		return codexQuotaEstimateSamePeriod, true
 	}
 	if advance >= windowDuration+windowDuration/2 {
@@ -1579,16 +1586,54 @@ func validCodexQuotaEstimatePeriodKey(periodKey string) bool {
 	return err == nil
 }
 
-func sanitizeQuotaEstimateForNow(estimate *QuotaEstimate, now time.Time) *QuotaEstimate {
+func normalizeCodexQuotaEstimateHistory(extra map[string]any, estimate *QuotaEstimate, window string, now time.Time) (*QuotaEstimate, map[string]any) {
 	if estimate == nil || estimate.Previous == nil || estimate.Previous.PeriodKey == "" {
-		return estimate
+		return estimate, nil
 	}
 	previousPeriod, err := parseTime(estimate.Previous.PeriodKey)
-	if err != nil || !previousPeriod.After(now) {
-		return estimate
+	if err != nil {
+		estimate.Previous = nil
+		return estimate, nil
 	}
-	estimate.Previous = nil
-	return estimate
+	if !previousPeriod.After(now) {
+		return estimate, nil
+	}
+
+	currentPeriod, currentErr := parseTime(estimate.PeriodKey)
+	windowDuration := codexQuotaEstimateWindowDuration(extra, window)
+	if currentErr != nil || windowDuration <= 0 || !previousPeriod.Before(currentPeriod) {
+		estimate.Previous = nil
+		return estimate, nil
+	}
+
+	actualEnd := currentPeriod.Add(-windowDuration)
+	if actualEnd.After(now.Add(codexQuotaEstimatePeriodDrift)) {
+		estimate.Previous = nil
+		return estimate, nil
+	}
+	if actualEnd.After(now) {
+		actualEnd = now
+	}
+	estimate.Previous.PeriodKey = actualEnd.UTC().Format(time.RFC3339)
+	return estimate, map[string]any{
+		codexQuotaEstimatePrevPeriodKeyKey(window): estimate.Previous.PeriodKey,
+	}
+}
+
+func mergeCodexQuotaEstimateUpdates(updateSets ...map[string]any) map[string]any {
+	var merged map[string]any
+	for _, updates := range updateSets {
+		if len(updates) == 0 {
+			continue
+		}
+		if merged == nil {
+			merged = make(map[string]any)
+		}
+		for key, value := range updates {
+			merged[key] = value
+		}
+	}
+	return merged
 }
 
 func newCodexQuotaEstimate(window string, sample codexQuotaEstimateSampleData, updatedAt string, previous *QuotaEstimateSnapshot) (*QuotaEstimate, map[string]any) {

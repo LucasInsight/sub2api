@@ -307,6 +307,76 @@ func (_c *AccountCreate) SetNillableRateLimitResetAt(v *time.Time) *AccountCreat
 	return _c
 }
 
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (_c *AccountCreate) SetCodex7dObservedResetAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCodex7dObservedResetAt(v)
+	return _c
+}
+
+// SetNillableCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCodex7dObservedResetAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCodex7dObservedResetAt(*v)
+	}
+	return _c
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (_c *AccountCreate) SetCodexQuotaObservedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCodexQuotaObservedAt(v)
+	return _c
+}
+
+// SetNillableCodexQuotaObservedAt sets the "codex_quota_observed_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCodexQuotaObservedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCodexQuotaObservedAt(*v)
+	}
+	return _c
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (_c *AccountCreate) SetCodexOfficialEarlyResetPending(v bool) *AccountCreate {
+	_c.mutation.SetCodexOfficialEarlyResetPending(v)
+	return _c
+}
+
+// SetNillableCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCodexOfficialEarlyResetPending(v *bool) *AccountCreate {
+	if v != nil {
+		_c.SetCodexOfficialEarlyResetPending(*v)
+	}
+	return _c
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (_c *AccountCreate) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCodexOfficialEarlyResetDetectedAt(v)
+	return _c
+}
+
+// SetNillableCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCodexOfficialEarlyResetDetectedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCodexOfficialEarlyResetDetectedAt(*v)
+	}
+	return _c
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (_c *AccountCreate) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCodexOfficialEarlyResetHandledAt(v)
+	return _c
+}
+
+// SetNillableCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCodexOfficialEarlyResetHandledAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCodexOfficialEarlyResetHandledAt(*v)
+	}
+	return _c
+}
+
 // SetOverloadUntil sets the "overload_until" field.
 func (_c *AccountCreate) SetOverloadUntil(v time.Time) *AccountCreate {
 	_c.mutation.SetOverloadUntil(v)
@@ -577,6 +647,10 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultSchedulable
 		_c.mutation.SetSchedulable(v)
 	}
+	if _, ok := _c.mutation.CodexOfficialEarlyResetPending(); !ok {
+		v := account.DefaultCodexOfficialEarlyResetPending
+		_c.mutation.SetCodexOfficialEarlyResetPending(v)
+	}
 	if _, ok := _c.mutation.QuotaDimension(); !ok {
 		v := account.DefaultQuotaDimension
 		_c.mutation.SetQuotaDimension(v)
@@ -644,6 +718,9 @@ func (_c *AccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.Schedulable(); !ok {
 		return &ValidationError{Name: "schedulable", err: errors.New(`ent: missing required field "Account.schedulable"`)}
+	}
+	if _, ok := _c.mutation.CodexOfficialEarlyResetPending(); !ok {
+		return &ValidationError{Name: "codex_official_early_reset_pending", err: errors.New(`ent: missing required field "Account.codex_official_early_reset_pending"`)}
 	}
 	if v, ok := _c.mutation.SessionWindowStatus(); ok {
 		if err := account.SessionWindowStatusValidator(v); err != nil {
@@ -772,6 +849,26 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RateLimitResetAt(); ok {
 		_spec.SetField(account.FieldRateLimitResetAt, field.TypeTime, value)
 		_node.RateLimitResetAt = &value
+	}
+	if value, ok := _c.mutation.Codex7dObservedResetAt(); ok {
+		_spec.SetField(account.FieldCodex7dObservedResetAt, field.TypeTime, value)
+		_node.Codex7dObservedResetAt = &value
+	}
+	if value, ok := _c.mutation.CodexQuotaObservedAt(); ok {
+		_spec.SetField(account.FieldCodexQuotaObservedAt, field.TypeTime, value)
+		_node.CodexQuotaObservedAt = &value
+	}
+	if value, ok := _c.mutation.CodexOfficialEarlyResetPending(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetPending, field.TypeBool, value)
+		_node.CodexOfficialEarlyResetPending = value
+	}
+	if value, ok := _c.mutation.CodexOfficialEarlyResetDetectedAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetDetectedAt, field.TypeTime, value)
+		_node.CodexOfficialEarlyResetDetectedAt = &value
+	}
+	if value, ok := _c.mutation.CodexOfficialEarlyResetHandledAt(); ok {
+		_spec.SetField(account.FieldCodexOfficialEarlyResetHandledAt, field.TypeTime, value)
+		_node.CodexOfficialEarlyResetHandledAt = &value
 	}
 	if value, ok := _c.mutation.OverloadUntil(); ok {
 		_spec.SetField(account.FieldOverloadUntil, field.TypeTime, value)
@@ -1290,6 +1387,90 @@ func (u *AccountUpsert) UpdateRateLimitResetAt() *AccountUpsert {
 // ClearRateLimitResetAt clears the value of the "rate_limit_reset_at" field.
 func (u *AccountUpsert) ClearRateLimitResetAt() *AccountUpsert {
 	u.SetNull(account.FieldRateLimitResetAt)
+	return u
+}
+
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsert) SetCodex7dObservedResetAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCodex7dObservedResetAt, v)
+	return u
+}
+
+// UpdateCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCodex7dObservedResetAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCodex7dObservedResetAt)
+	return u
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsert) ClearCodex7dObservedResetAt() *AccountUpsert {
+	u.SetNull(account.FieldCodex7dObservedResetAt)
+	return u
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (u *AccountUpsert) SetCodexQuotaObservedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCodexQuotaObservedAt, v)
+	return u
+}
+
+// UpdateCodexQuotaObservedAt sets the "codex_quota_observed_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCodexQuotaObservedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCodexQuotaObservedAt)
+	return u
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (u *AccountUpsert) ClearCodexQuotaObservedAt() *AccountUpsert {
+	u.SetNull(account.FieldCodexQuotaObservedAt)
+	return u
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (u *AccountUpsert) SetCodexOfficialEarlyResetPending(v bool) *AccountUpsert {
+	u.Set(account.FieldCodexOfficialEarlyResetPending, v)
+	return u
+}
+
+// UpdateCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCodexOfficialEarlyResetPending() *AccountUpsert {
+	u.SetExcluded(account.FieldCodexOfficialEarlyResetPending)
+	return u
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsert) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCodexOfficialEarlyResetDetectedAt, v)
+	return u
+}
+
+// UpdateCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCodexOfficialEarlyResetDetectedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCodexOfficialEarlyResetDetectedAt)
+	return u
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsert) ClearCodexOfficialEarlyResetDetectedAt() *AccountUpsert {
+	u.SetNull(account.FieldCodexOfficialEarlyResetDetectedAt)
+	return u
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsert) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCodexOfficialEarlyResetHandledAt, v)
+	return u
+}
+
+// UpdateCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCodexOfficialEarlyResetHandledAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCodexOfficialEarlyResetHandledAt)
+	return u
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsert) ClearCodexOfficialEarlyResetHandledAt() *AccountUpsert {
+	u.SetNull(account.FieldCodexOfficialEarlyResetHandledAt)
 	return u
 }
 
@@ -1886,6 +2067,104 @@ func (u *AccountUpsertOne) UpdateRateLimitResetAt() *AccountUpsertOne {
 func (u *AccountUpsertOne) ClearRateLimitResetAt() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearRateLimitResetAt()
+	})
+}
+
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsertOne) SetCodex7dObservedResetAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodex7dObservedResetAt(v)
+	})
+}
+
+// UpdateCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCodex7dObservedResetAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodex7dObservedResetAt()
+	})
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsertOne) ClearCodex7dObservedResetAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodex7dObservedResetAt()
+	})
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (u *AccountUpsertOne) SetCodexQuotaObservedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexQuotaObservedAt(v)
+	})
+}
+
+// UpdateCodexQuotaObservedAt sets the "codex_quota_observed_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCodexQuotaObservedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexQuotaObservedAt()
+	})
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (u *AccountUpsertOne) ClearCodexQuotaObservedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexQuotaObservedAt()
+	})
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (u *AccountUpsertOne) SetCodexOfficialEarlyResetPending(v bool) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetPending(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCodexOfficialEarlyResetPending() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetPending()
+	})
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsertOne) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetDetectedAt(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCodexOfficialEarlyResetDetectedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetDetectedAt()
+	})
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsertOne) ClearCodexOfficialEarlyResetDetectedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexOfficialEarlyResetDetectedAt()
+	})
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsertOne) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetHandledAt(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCodexOfficialEarlyResetHandledAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetHandledAt()
+	})
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsertOne) ClearCodexOfficialEarlyResetHandledAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexOfficialEarlyResetHandledAt()
 	})
 }
 
@@ -2671,6 +2950,104 @@ func (u *AccountUpsertBulk) UpdateRateLimitResetAt() *AccountUpsertBulk {
 func (u *AccountUpsertBulk) ClearRateLimitResetAt() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearRateLimitResetAt()
+	})
+}
+
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsertBulk) SetCodex7dObservedResetAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodex7dObservedResetAt(v)
+	})
+}
+
+// UpdateCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCodex7dObservedResetAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodex7dObservedResetAt()
+	})
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (u *AccountUpsertBulk) ClearCodex7dObservedResetAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodex7dObservedResetAt()
+	})
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (u *AccountUpsertBulk) SetCodexQuotaObservedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexQuotaObservedAt(v)
+	})
+}
+
+// UpdateCodexQuotaObservedAt sets the "codex_quota_observed_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCodexQuotaObservedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexQuotaObservedAt()
+	})
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (u *AccountUpsertBulk) ClearCodexQuotaObservedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexQuotaObservedAt()
+	})
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (u *AccountUpsertBulk) SetCodexOfficialEarlyResetPending(v bool) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetPending(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCodexOfficialEarlyResetPending() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetPending()
+	})
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsertBulk) SetCodexOfficialEarlyResetDetectedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetDetectedAt(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCodexOfficialEarlyResetDetectedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetDetectedAt()
+	})
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (u *AccountUpsertBulk) ClearCodexOfficialEarlyResetDetectedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexOfficialEarlyResetDetectedAt()
+	})
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsertBulk) SetCodexOfficialEarlyResetHandledAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCodexOfficialEarlyResetHandledAt(v)
+	})
+}
+
+// UpdateCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCodexOfficialEarlyResetHandledAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCodexOfficialEarlyResetHandledAt()
+	})
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (u *AccountUpsertBulk) ClearCodexOfficialEarlyResetHandledAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCodexOfficialEarlyResetHandledAt()
 	})
 }
 

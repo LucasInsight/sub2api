@@ -251,8 +251,12 @@ func init() {
 	accountDescSchedulable := accountFields[17].Descriptor()
 	// account.DefaultSchedulable holds the default value on creation for the schedulable field.
 	account.DefaultSchedulable = accountDescSchedulable.Default.(bool)
+	// accountDescCodexOfficialEarlyResetPending is the schema descriptor for codex_official_early_reset_pending field.
+	accountDescCodexOfficialEarlyResetPending := accountFields[22].Descriptor()
+	// account.DefaultCodexOfficialEarlyResetPending holds the default value on creation for the codex_official_early_reset_pending field.
+	account.DefaultCodexOfficialEarlyResetPending = accountDescCodexOfficialEarlyResetPending.Default.(bool)
 	// accountDescSessionWindowStatus is the schema descriptor for session_window_status field.
-	accountDescSessionWindowStatus := accountFields[25].Descriptor()
+	accountDescSessionWindowStatus := accountFields[30].Descriptor()
 	// account.SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	account.SessionWindowStatusValidator = accountDescSessionWindowStatus.Validators[0].(func(string) error)
 	accountgroupFields := schema.AccountGroup{}.Fields()

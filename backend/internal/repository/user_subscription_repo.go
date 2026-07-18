@@ -18,6 +18,8 @@ type userSubscriptionRepository struct {
 	client *dbent.Client
 }
 
+var _ service.ActiveUserSubscriptionQuotaResetRepository = (*userSubscriptionRepository)(nil)
+
 func NewUserSubscriptionRepository(client *dbent.Client) service.UserSubscriptionRepository {
 	return &userSubscriptionRepository{client: client}
 }
@@ -197,6 +199,21 @@ func (r *userSubscriptionRepository) ListActiveByUserID(ctx context.Context, use
 		).
 		WithGroup().
 		Order(dbent.Desc(usersubscription.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return userSubscriptionEntitiesToService(subs), nil
+}
+
+func (r *userSubscriptionRepository) ListAllActiveForQuotaReset(ctx context.Context, now time.Time) ([]service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	subs, err := client.UserSubscription.Query().
+		Where(
+			usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			usersubscription.ExpiresAtGT(now),
+		).
+		Order(dbent.Asc(usersubscription.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, err

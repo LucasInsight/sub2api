@@ -2280,60 +2280,65 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	deleted_at                  *time.Time
-	name                        *string
-	notes                       *string
-	platform                    *string
-	_type                       *string
-	credentials                 *map[string]interface{}
-	extra                       *map[string]interface{}
-	proxy_fallback_origin_id    *int64
-	addproxy_fallback_origin_id *int64
-	concurrency                 *int
-	addconcurrency              *int
-	load_factor                 *int
-	addload_factor              *int
-	priority                    *int
-	addpriority                 *int
-	rate_multiplier             *float64
-	addrate_multiplier          *float64
-	status                      *string
-	error_message               *string
-	last_used_at                *time.Time
-	expires_at                  *time.Time
-	auto_pause_on_expired       *bool
-	schedulable                 *bool
-	rate_limited_at             *time.Time
-	rate_limit_reset_at         *time.Time
-	overload_until              *time.Time
-	temp_unschedulable_until    *time.Time
-	temp_unschedulable_reason   *string
-	session_window_start        *time.Time
-	session_window_end          *time.Time
-	session_window_status       *string
-	quota_dimension             *account.QuotaDimension
-	clearedFields               map[string]struct{}
-	groups                      map[int64]struct{}
-	removedgroups               map[int64]struct{}
-	clearedgroups               bool
-	proxy                       *int64
-	clearedproxy                bool
-	parent                      *int64
-	clearedparent               bool
-	children                    map[int64]struct{}
-	removedchildren             map[int64]struct{}
-	clearedchildren             bool
-	usage_logs                  map[int64]struct{}
-	removedusage_logs           map[int64]struct{}
-	clearedusage_logs           bool
-	done                        bool
-	oldValue                    func(context.Context) (*Account, error)
-	predicates                  []predicate.Account
+	op                                     Op
+	typ                                    string
+	id                                     *int64
+	created_at                             *time.Time
+	updated_at                             *time.Time
+	deleted_at                             *time.Time
+	name                                   *string
+	notes                                  *string
+	platform                               *string
+	_type                                  *string
+	credentials                            *map[string]interface{}
+	extra                                  *map[string]interface{}
+	proxy_fallback_origin_id               *int64
+	addproxy_fallback_origin_id            *int64
+	concurrency                            *int
+	addconcurrency                         *int
+	load_factor                            *int
+	addload_factor                         *int
+	priority                               *int
+	addpriority                            *int
+	rate_multiplier                        *float64
+	addrate_multiplier                     *float64
+	status                                 *string
+	error_message                          *string
+	last_used_at                           *time.Time
+	expires_at                             *time.Time
+	auto_pause_on_expired                  *bool
+	schedulable                            *bool
+	rate_limited_at                        *time.Time
+	rate_limit_reset_at                    *time.Time
+	codex_7d_observed_reset_at             *time.Time
+	codex_quota_observed_at                *time.Time
+	codex_official_early_reset_pending     *bool
+	codex_official_early_reset_detected_at *time.Time
+	codex_official_early_reset_handled_at  *time.Time
+	overload_until                         *time.Time
+	temp_unschedulable_until               *time.Time
+	temp_unschedulable_reason              *string
+	session_window_start                   *time.Time
+	session_window_end                     *time.Time
+	session_window_status                  *string
+	quota_dimension                        *account.QuotaDimension
+	clearedFields                          map[string]struct{}
+	groups                                 map[int64]struct{}
+	removedgroups                          map[int64]struct{}
+	clearedgroups                          bool
+	proxy                                  *int64
+	clearedproxy                           bool
+	parent                                 *int64
+	clearedparent                          bool
+	children                               map[int64]struct{}
+	removedchildren                        map[int64]struct{}
+	clearedchildren                        bool
+	usage_logs                             map[int64]struct{}
+	removedusage_logs                      map[int64]struct{}
+	clearedusage_logs                      bool
+	done                                   bool
+	oldValue                               func(context.Context) (*Account, error)
+	predicates                             []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3494,6 +3499,238 @@ func (m *AccountMutation) ResetRateLimitResetAt() {
 	delete(m.clearedFields, account.FieldRateLimitResetAt)
 }
 
+// SetCodex7dObservedResetAt sets the "codex_7d_observed_reset_at" field.
+func (m *AccountMutation) SetCodex7dObservedResetAt(t time.Time) {
+	m.codex_7d_observed_reset_at = &t
+}
+
+// Codex7dObservedResetAt returns the value of the "codex_7d_observed_reset_at" field in the mutation.
+func (m *AccountMutation) Codex7dObservedResetAt() (r time.Time, exists bool) {
+	v := m.codex_7d_observed_reset_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodex7dObservedResetAt returns the old "codex_7d_observed_reset_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCodex7dObservedResetAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodex7dObservedResetAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodex7dObservedResetAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodex7dObservedResetAt: %w", err)
+	}
+	return oldValue.Codex7dObservedResetAt, nil
+}
+
+// ClearCodex7dObservedResetAt clears the value of the "codex_7d_observed_reset_at" field.
+func (m *AccountMutation) ClearCodex7dObservedResetAt() {
+	m.codex_7d_observed_reset_at = nil
+	m.clearedFields[account.FieldCodex7dObservedResetAt] = struct{}{}
+}
+
+// Codex7dObservedResetAtCleared returns if the "codex_7d_observed_reset_at" field was cleared in this mutation.
+func (m *AccountMutation) Codex7dObservedResetAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCodex7dObservedResetAt]
+	return ok
+}
+
+// ResetCodex7dObservedResetAt resets all changes to the "codex_7d_observed_reset_at" field.
+func (m *AccountMutation) ResetCodex7dObservedResetAt() {
+	m.codex_7d_observed_reset_at = nil
+	delete(m.clearedFields, account.FieldCodex7dObservedResetAt)
+}
+
+// SetCodexQuotaObservedAt sets the "codex_quota_observed_at" field.
+func (m *AccountMutation) SetCodexQuotaObservedAt(t time.Time) {
+	m.codex_quota_observed_at = &t
+}
+
+// CodexQuotaObservedAt returns the value of the "codex_quota_observed_at" field in the mutation.
+func (m *AccountMutation) CodexQuotaObservedAt() (r time.Time, exists bool) {
+	v := m.codex_quota_observed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodexQuotaObservedAt returns the old "codex_quota_observed_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCodexQuotaObservedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodexQuotaObservedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodexQuotaObservedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodexQuotaObservedAt: %w", err)
+	}
+	return oldValue.CodexQuotaObservedAt, nil
+}
+
+// ClearCodexQuotaObservedAt clears the value of the "codex_quota_observed_at" field.
+func (m *AccountMutation) ClearCodexQuotaObservedAt() {
+	m.codex_quota_observed_at = nil
+	m.clearedFields[account.FieldCodexQuotaObservedAt] = struct{}{}
+}
+
+// CodexQuotaObservedAtCleared returns if the "codex_quota_observed_at" field was cleared in this mutation.
+func (m *AccountMutation) CodexQuotaObservedAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCodexQuotaObservedAt]
+	return ok
+}
+
+// ResetCodexQuotaObservedAt resets all changes to the "codex_quota_observed_at" field.
+func (m *AccountMutation) ResetCodexQuotaObservedAt() {
+	m.codex_quota_observed_at = nil
+	delete(m.clearedFields, account.FieldCodexQuotaObservedAt)
+}
+
+// SetCodexOfficialEarlyResetPending sets the "codex_official_early_reset_pending" field.
+func (m *AccountMutation) SetCodexOfficialEarlyResetPending(b bool) {
+	m.codex_official_early_reset_pending = &b
+}
+
+// CodexOfficialEarlyResetPending returns the value of the "codex_official_early_reset_pending" field in the mutation.
+func (m *AccountMutation) CodexOfficialEarlyResetPending() (r bool, exists bool) {
+	v := m.codex_official_early_reset_pending
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodexOfficialEarlyResetPending returns the old "codex_official_early_reset_pending" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCodexOfficialEarlyResetPending(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodexOfficialEarlyResetPending is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodexOfficialEarlyResetPending requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodexOfficialEarlyResetPending: %w", err)
+	}
+	return oldValue.CodexOfficialEarlyResetPending, nil
+}
+
+// ResetCodexOfficialEarlyResetPending resets all changes to the "codex_official_early_reset_pending" field.
+func (m *AccountMutation) ResetCodexOfficialEarlyResetPending() {
+	m.codex_official_early_reset_pending = nil
+}
+
+// SetCodexOfficialEarlyResetDetectedAt sets the "codex_official_early_reset_detected_at" field.
+func (m *AccountMutation) SetCodexOfficialEarlyResetDetectedAt(t time.Time) {
+	m.codex_official_early_reset_detected_at = &t
+}
+
+// CodexOfficialEarlyResetDetectedAt returns the value of the "codex_official_early_reset_detected_at" field in the mutation.
+func (m *AccountMutation) CodexOfficialEarlyResetDetectedAt() (r time.Time, exists bool) {
+	v := m.codex_official_early_reset_detected_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodexOfficialEarlyResetDetectedAt returns the old "codex_official_early_reset_detected_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCodexOfficialEarlyResetDetectedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodexOfficialEarlyResetDetectedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodexOfficialEarlyResetDetectedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodexOfficialEarlyResetDetectedAt: %w", err)
+	}
+	return oldValue.CodexOfficialEarlyResetDetectedAt, nil
+}
+
+// ClearCodexOfficialEarlyResetDetectedAt clears the value of the "codex_official_early_reset_detected_at" field.
+func (m *AccountMutation) ClearCodexOfficialEarlyResetDetectedAt() {
+	m.codex_official_early_reset_detected_at = nil
+	m.clearedFields[account.FieldCodexOfficialEarlyResetDetectedAt] = struct{}{}
+}
+
+// CodexOfficialEarlyResetDetectedAtCleared returns if the "codex_official_early_reset_detected_at" field was cleared in this mutation.
+func (m *AccountMutation) CodexOfficialEarlyResetDetectedAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCodexOfficialEarlyResetDetectedAt]
+	return ok
+}
+
+// ResetCodexOfficialEarlyResetDetectedAt resets all changes to the "codex_official_early_reset_detected_at" field.
+func (m *AccountMutation) ResetCodexOfficialEarlyResetDetectedAt() {
+	m.codex_official_early_reset_detected_at = nil
+	delete(m.clearedFields, account.FieldCodexOfficialEarlyResetDetectedAt)
+}
+
+// SetCodexOfficialEarlyResetHandledAt sets the "codex_official_early_reset_handled_at" field.
+func (m *AccountMutation) SetCodexOfficialEarlyResetHandledAt(t time.Time) {
+	m.codex_official_early_reset_handled_at = &t
+}
+
+// CodexOfficialEarlyResetHandledAt returns the value of the "codex_official_early_reset_handled_at" field in the mutation.
+func (m *AccountMutation) CodexOfficialEarlyResetHandledAt() (r time.Time, exists bool) {
+	v := m.codex_official_early_reset_handled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodexOfficialEarlyResetHandledAt returns the old "codex_official_early_reset_handled_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCodexOfficialEarlyResetHandledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodexOfficialEarlyResetHandledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodexOfficialEarlyResetHandledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodexOfficialEarlyResetHandledAt: %w", err)
+	}
+	return oldValue.CodexOfficialEarlyResetHandledAt, nil
+}
+
+// ClearCodexOfficialEarlyResetHandledAt clears the value of the "codex_official_early_reset_handled_at" field.
+func (m *AccountMutation) ClearCodexOfficialEarlyResetHandledAt() {
+	m.codex_official_early_reset_handled_at = nil
+	m.clearedFields[account.FieldCodexOfficialEarlyResetHandledAt] = struct{}{}
+}
+
+// CodexOfficialEarlyResetHandledAtCleared returns if the "codex_official_early_reset_handled_at" field was cleared in this mutation.
+func (m *AccountMutation) CodexOfficialEarlyResetHandledAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCodexOfficialEarlyResetHandledAt]
+	return ok
+}
+
+// ResetCodexOfficialEarlyResetHandledAt resets all changes to the "codex_official_early_reset_handled_at" field.
+func (m *AccountMutation) ResetCodexOfficialEarlyResetHandledAt() {
+	m.codex_official_early_reset_handled_at = nil
+	delete(m.clearedFields, account.FieldCodexOfficialEarlyResetHandledAt)
+}
+
 // SetOverloadUntil sets the "overload_until" field.
 func (m *AccountMutation) SetOverloadUntil(t time.Time) {
 	m.overload_until = &t
@@ -4136,7 +4373,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 36)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4205,6 +4442,21 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.rate_limit_reset_at != nil {
 		fields = append(fields, account.FieldRateLimitResetAt)
+	}
+	if m.codex_7d_observed_reset_at != nil {
+		fields = append(fields, account.FieldCodex7dObservedResetAt)
+	}
+	if m.codex_quota_observed_at != nil {
+		fields = append(fields, account.FieldCodexQuotaObservedAt)
+	}
+	if m.codex_official_early_reset_pending != nil {
+		fields = append(fields, account.FieldCodexOfficialEarlyResetPending)
+	}
+	if m.codex_official_early_reset_detected_at != nil {
+		fields = append(fields, account.FieldCodexOfficialEarlyResetDetectedAt)
+	}
+	if m.codex_official_early_reset_handled_at != nil {
+		fields = append(fields, account.FieldCodexOfficialEarlyResetHandledAt)
 	}
 	if m.overload_until != nil {
 		fields = append(fields, account.FieldOverloadUntil)
@@ -4284,6 +4536,16 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.RateLimitedAt()
 	case account.FieldRateLimitResetAt:
 		return m.RateLimitResetAt()
+	case account.FieldCodex7dObservedResetAt:
+		return m.Codex7dObservedResetAt()
+	case account.FieldCodexQuotaObservedAt:
+		return m.CodexQuotaObservedAt()
+	case account.FieldCodexOfficialEarlyResetPending:
+		return m.CodexOfficialEarlyResetPending()
+	case account.FieldCodexOfficialEarlyResetDetectedAt:
+		return m.CodexOfficialEarlyResetDetectedAt()
+	case account.FieldCodexOfficialEarlyResetHandledAt:
+		return m.CodexOfficialEarlyResetHandledAt()
 	case account.FieldOverloadUntil:
 		return m.OverloadUntil()
 	case account.FieldTempUnschedulableUntil:
@@ -4355,6 +4617,16 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldRateLimitedAt(ctx)
 	case account.FieldRateLimitResetAt:
 		return m.OldRateLimitResetAt(ctx)
+	case account.FieldCodex7dObservedResetAt:
+		return m.OldCodex7dObservedResetAt(ctx)
+	case account.FieldCodexQuotaObservedAt:
+		return m.OldCodexQuotaObservedAt(ctx)
+	case account.FieldCodexOfficialEarlyResetPending:
+		return m.OldCodexOfficialEarlyResetPending(ctx)
+	case account.FieldCodexOfficialEarlyResetDetectedAt:
+		return m.OldCodexOfficialEarlyResetDetectedAt(ctx)
+	case account.FieldCodexOfficialEarlyResetHandledAt:
+		return m.OldCodexOfficialEarlyResetHandledAt(ctx)
 	case account.FieldOverloadUntil:
 		return m.OldOverloadUntil(ctx)
 	case account.FieldTempUnschedulableUntil:
@@ -4541,6 +4813,41 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRateLimitResetAt(v)
 		return nil
+	case account.FieldCodex7dObservedResetAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodex7dObservedResetAt(v)
+		return nil
+	case account.FieldCodexQuotaObservedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodexQuotaObservedAt(v)
+		return nil
+	case account.FieldCodexOfficialEarlyResetPending:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodexOfficialEarlyResetPending(v)
+		return nil
+	case account.FieldCodexOfficialEarlyResetDetectedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodexOfficialEarlyResetDetectedAt(v)
+		return nil
+	case account.FieldCodexOfficialEarlyResetHandledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodexOfficialEarlyResetHandledAt(v)
+		return nil
 	case account.FieldOverloadUntil:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -4720,6 +5027,18 @@ func (m *AccountMutation) ClearedFields() []string {
 	if m.FieldCleared(account.FieldRateLimitResetAt) {
 		fields = append(fields, account.FieldRateLimitResetAt)
 	}
+	if m.FieldCleared(account.FieldCodex7dObservedResetAt) {
+		fields = append(fields, account.FieldCodex7dObservedResetAt)
+	}
+	if m.FieldCleared(account.FieldCodexQuotaObservedAt) {
+		fields = append(fields, account.FieldCodexQuotaObservedAt)
+	}
+	if m.FieldCleared(account.FieldCodexOfficialEarlyResetDetectedAt) {
+		fields = append(fields, account.FieldCodexOfficialEarlyResetDetectedAt)
+	}
+	if m.FieldCleared(account.FieldCodexOfficialEarlyResetHandledAt) {
+		fields = append(fields, account.FieldCodexOfficialEarlyResetHandledAt)
+	}
 	if m.FieldCleared(account.FieldOverloadUntil) {
 		fields = append(fields, account.FieldOverloadUntil)
 	}
@@ -4784,6 +5103,18 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldRateLimitResetAt:
 		m.ClearRateLimitResetAt()
+		return nil
+	case account.FieldCodex7dObservedResetAt:
+		m.ClearCodex7dObservedResetAt()
+		return nil
+	case account.FieldCodexQuotaObservedAt:
+		m.ClearCodexQuotaObservedAt()
+		return nil
+	case account.FieldCodexOfficialEarlyResetDetectedAt:
+		m.ClearCodexOfficialEarlyResetDetectedAt()
+		return nil
+	case account.FieldCodexOfficialEarlyResetHandledAt:
+		m.ClearCodexOfficialEarlyResetHandledAt()
 		return nil
 	case account.FieldOverloadUntil:
 		m.ClearOverloadUntil()
@@ -4882,6 +5213,21 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldRateLimitResetAt:
 		m.ResetRateLimitResetAt()
+		return nil
+	case account.FieldCodex7dObservedResetAt:
+		m.ResetCodex7dObservedResetAt()
+		return nil
+	case account.FieldCodexQuotaObservedAt:
+		m.ResetCodexQuotaObservedAt()
+		return nil
+	case account.FieldCodexOfficialEarlyResetPending:
+		m.ResetCodexOfficialEarlyResetPending()
+		return nil
+	case account.FieldCodexOfficialEarlyResetDetectedAt:
+		m.ResetCodexOfficialEarlyResetDetectedAt()
+		return nil
+	case account.FieldCodexOfficialEarlyResetHandledAt:
+		m.ResetCodexOfficialEarlyResetHandledAt()
 		return nil
 	case account.FieldOverloadUntil:
 		m.ResetOverloadUntil()
