@@ -356,6 +356,49 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 		}
 	})
 
+	t.Run("early seven day reset records previous and survives next read", func(t *testing.T) {
+		oldReset := now.Add(6 * 24 * time.Hour)
+		earlyResetAt := now.Add(-10 * time.Minute)
+		newReset := earlyResetAt.Add(7 * 24 * time.Hour)
+		progress := &UsageProgress{
+			Utilization: 50,
+			ResetsAt:    &newReset,
+			WindowStats: &WindowStats{Cost: 4},
+		}
+		extra := map[string]any{
+			"codex_7d_window_minutes":               7 * 24 * 60,
+			"codex_7d_quota_estimate_min":           10.0,
+			"codex_7d_quota_estimate_max":           20.0,
+			"codex_7d_quota_estimate_updated_at":    "2026-03-16T10:00:00Z",
+			"codex_7d_quota_estimate_coverage_from": 50.0,
+			"codex_7d_quota_estimate_coverage_to":   60.0,
+			"codex_7d_quota_estimate_period_key":    oldReset.UTC().Format(time.RFC3339),
+		}
+
+		estimate, updates := buildCodexQuotaEstimateUpdates(extra, progress, "7d", now)
+		if estimate == nil || estimate.Previous == nil {
+			t.Fatalf("early reset should preserve previous estimate: %#v", estimate)
+		}
+		if estimate.Previous.Min != 10 || estimate.Previous.Max != 20 {
+			t.Fatalf("previous estimate = %#v, want 10-20", estimate.Previous)
+		}
+		actualEnd := earlyResetAt.UTC().Format(time.RFC3339)
+		if estimate.Previous.PeriodKey != actualEnd {
+			t.Fatalf("previous period end = %q, want actual early reset %q", estimate.Previous.PeriodKey, actualEnd)
+		}
+		if updates["codex_7d_quota_estimate_prev_period_key"] != actualEnd {
+			t.Fatalf("previous period update = %#v, want %q", updates, actualEnd)
+		}
+
+		for key, value := range updates {
+			extra[key] = value
+		}
+		estimate, _ = buildCodexQuotaEstimateUpdates(extra, progress, "7d", now.Add(time.Minute))
+		if estimate == nil || estimate.Previous == nil || estimate.Previous.PeriodKey != actualEnd {
+			t.Fatalf("previous estimate disappeared on next read: %#v", estimate)
+		}
+	})
+
 	t.Run("same coverage legacy estimate backfills period key", func(t *testing.T) {
 		progress := &UsageProgress{
 			Utilization: 50,
@@ -383,6 +426,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 
 	t.Run("same coverage next seven day period records previous", func(t *testing.T) {
 		nextReset := activeReset.Add(7 * 24 * time.Hour)
+		transitionNow := activeReset.Add(time.Minute)
 		progress := &UsageProgress{
 			Utilization: 50,
 			ResetsAt:    &nextReset,
@@ -397,7 +441,7 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			"codex_7d_quota_estimate_coverage_from": 50.0,
 			"codex_7d_quota_estimate_coverage_to":   60.0,
 			"codex_7d_quota_estimate_period_key":    activePeriod,
-		}, progress, "7d", now)
+		}, progress, "7d", transitionNow)
 
 		if estimate == nil || estimate.Min != 8 || estimate.Max != 8 {
 			t.Fatalf("estimate = %#v, want current min=max=8", estimate)
@@ -710,6 +754,38 @@ func TestBuildCodexQuotaEstimateUpdates(t *testing.T) {
 			t.Fatalf("expected no updates, got %#v", updates)
 		}
 	})
+
+	t.Run("persisted early reset history is normalized and returned", func(t *testing.T) {
+		oldReset := now.Add(2 * 24 * time.Hour)
+		earlyResetAt := now.Add(-30 * time.Minute)
+		currentReset := earlyResetAt.Add(7 * 24 * time.Hour)
+		estimate, updates := buildCodexQuotaEstimateUpdates(map[string]any{
+			"codex_7d_window_minutes":                    7 * 24 * 60,
+			"codex_7d_quota_estimate_min":                8.0,
+			"codex_7d_quota_estimate_max":                8.0,
+			"codex_7d_quota_estimate_updated_at":         now.UTC().Format(time.RFC3339),
+			"codex_7d_quota_estimate_coverage_from":      50.0,
+			"codex_7d_quota_estimate_coverage_to":        60.0,
+			"codex_7d_quota_estimate_period_key":         currentReset.UTC().Format(time.RFC3339),
+			"codex_7d_quota_estimate_prev_min":           10.0,
+			"codex_7d_quota_estimate_prev_max":           20.0,
+			"codex_7d_quota_estimate_prev_updated_at":    "2026-03-16T10:00:00Z",
+			"codex_7d_quota_estimate_prev_coverage_from": 50.0,
+			"codex_7d_quota_estimate_prev_coverage_to":   60.0,
+			"codex_7d_quota_estimate_prev_period_key":    oldReset.UTC().Format(time.RFC3339),
+		}, nil, "7d", now)
+
+		actualEnd := earlyResetAt.UTC().Format(time.RFC3339)
+		if estimate == nil || estimate.Previous == nil {
+			t.Fatalf("expected normalized previous estimate, got %#v", estimate)
+		}
+		if estimate.Previous.PeriodKey != actualEnd {
+			t.Fatalf("normalized previous period end = %q, want %q", estimate.Previous.PeriodKey, actualEnd)
+		}
+		if updates["codex_7d_quota_estimate_prev_period_key"] != actualEnd {
+			t.Fatalf("expected normalized period to be persisted, got %#v", updates)
+		}
+	})
 }
 
 func TestAccountUsageServiceApplyCodexQuotaEstimateUpdatesExtra(t *testing.T) {
@@ -742,6 +818,53 @@ func TestAccountUsageServiceApplyCodexQuotaEstimateUpdatesExtra(t *testing.T) {
 	}
 	if len(repo.updateExtraCalls) != 1 {
 		t.Fatalf("expected one UpdateExtra call, got %d", len(repo.updateExtraCalls))
+	}
+}
+
+func TestAccountUsageServiceApplyCodexQuotaEstimateNormalizesEarlyResetHistory(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)
+	earlyResetAt := now.Add(-30 * time.Minute)
+	currentReset := earlyResetAt.Add(7 * 24 * time.Hour)
+	oldReset := now.Add(2 * 24 * time.Hour)
+	actualEnd := earlyResetAt.UTC().Format(time.RFC3339)
+	repo := &accountUsageCodexProbeRepo{}
+	svc := &AccountUsageService{accountRepo: repo}
+	account := &Account{ID: 45, Extra: map[string]any{
+		"codex_7d_window_minutes":                    7 * 24 * 60,
+		"codex_7d_quota_estimate_min":                8.0,
+		"codex_7d_quota_estimate_max":                8.0,
+		"codex_7d_quota_estimate_updated_at":         now.UTC().Format(time.RFC3339),
+		"codex_7d_quota_estimate_coverage_from":      50.0,
+		"codex_7d_quota_estimate_coverage_to":        60.0,
+		"codex_7d_quota_estimate_period_key":         currentReset.UTC().Format(time.RFC3339),
+		"codex_7d_quota_estimate_prev_min":           10.0,
+		"codex_7d_quota_estimate_prev_max":           20.0,
+		"codex_7d_quota_estimate_prev_updated_at":    "2026-03-16T10:00:00Z",
+		"codex_7d_quota_estimate_prev_coverage_from": 50.0,
+		"codex_7d_quota_estimate_prev_coverage_to":   60.0,
+		"codex_7d_quota_estimate_prev_period_key":    oldReset.UTC().Format(time.RFC3339),
+	}}
+	progress := &UsageProgress{
+		Utilization: 1,
+		ResetsAt:    &currentReset,
+		WindowStats: &WindowStats{Cost: 1},
+	}
+
+	svc.applyCodexQuotaEstimate(context.Background(), account, progress, "7d", now)
+
+	if progress.QuotaEstimate == nil || progress.QuotaEstimate.Previous == nil {
+		t.Fatalf("progress previous estimate = %#v, want normalized history", progress.QuotaEstimate)
+	}
+	if progress.QuotaEstimate.Previous.PeriodKey != actualEnd {
+		t.Fatalf("progress previous period end = %q, want %q", progress.QuotaEstimate.Previous.PeriodKey, actualEnd)
+	}
+	if account.Extra["codex_7d_quota_estimate_prev_period_key"] != actualEnd {
+		t.Fatalf("account extra history not normalized: %#v", account.Extra)
+	}
+	if len(repo.updateExtraCalls) != 1 || repo.updateExtraCalls[0]["codex_7d_quota_estimate_prev_period_key"] != actualEnd {
+		t.Fatalf("expected normalized history persistence, got %#v", repo.updateExtraCalls)
 	}
 }
 
