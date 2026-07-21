@@ -118,6 +118,7 @@ func RegisterUserRoutes(
 		{
 			subscriptions.GET("", h.Subscription.List)
 			subscriptions.GET("/active", h.Subscription.GetActive)
+			subscriptions.GET("/openai-usage-multiplier", h.Subscription.GetOpenAIUsageMultiplier)
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
 		}

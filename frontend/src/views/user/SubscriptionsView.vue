@@ -45,6 +45,77 @@
                   <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
                   </span>
+                  <HelpTooltip
+                    v-if="isActiveOpenAISubscription(subscription)"
+                    data-testid="openai-dynamic-multiplier-trigger"
+                    width-class="w-[min(22rem,calc(100vw-2rem))]"
+                  >
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 transition-colors hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-500 dark:hover:text-emerald-400"
+                        :aria-label="t('userSubscriptions.openaiUsageTip.ariaLabel')"
+                      >
+                        <Icon name="infoCircle" size="sm" />
+                      </button>
+                    </template>
+                    <div class="space-y-3">
+                      <p class="font-semibold text-white">
+                        {{ t('userSubscriptions.openaiUsageTip.title') }}
+                      </p>
+                      <div
+                        v-for="tier in openAIUsageTiers"
+                        :key="tier.tier"
+                        class="space-y-1"
+                      >
+                        <p class="font-medium text-gray-100">
+                          {{ t('userSubscriptions.openaiUsageTip.tierTitle', { tier: tier.tier }) }}
+                        </p>
+                        <p>
+                          {{
+                            t('userSubscriptions.openaiUsageTip.baselineQuota', {
+                              quota: formatQuota(tier.baseline_quota_usd)
+                            })
+                          }}
+                        </p>
+                        <template
+                          v-if="tier.telemetry_quota_usd != null && tier.dynamic_multiplier != null"
+                        >
+                          <p>
+                            {{
+                              t('userSubscriptions.openaiUsageTip.telemetryQuota', {
+                                quota: formatQuota(tier.telemetry_quota_usd)
+                              })
+                            }}
+                          </p>
+                          <p>
+                            {{
+                              t('userSubscriptions.openaiUsageTip.tierFormula', {
+                                baseline: formatQuota(tier.baseline_quota_usd),
+                                telemetry: formatQuota(tier.telemetry_quota_usd),
+                                value: formatMultiplier(tier.dynamic_multiplier)
+                              })
+                            }}
+                          </p>
+                        </template>
+                        <p v-else>{{ t('userSubscriptions.openaiUsageTip.noTelemetryQuota') }}</p>
+                      </div>
+                      <p class="border-t border-white/15 pt-2 font-medium text-emerald-200">
+                        <template v-if="openAIUsageMultiplier?.dynamic_multiplier != null">
+                          {{
+                            t('userSubscriptions.openaiUsageTip.currentMultiplier', {
+                              value: formatMultiplier(
+                                openAIUsageMultiplier.dynamic_multiplier
+                              )
+                            })
+                          }}
+                        </template>
+                        <template v-else>
+                          {{ t('userSubscriptions.openaiUsageTip.noMultiplier') }}
+                        </template>
+                      </p>
+                    </div>
+                  </HelpTooltip>
                 </div>
                 <p v-if="subscription.group?.description" class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
                   {{ subscription.group.description }}
@@ -290,13 +361,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
-import type { UserSubscription } from '@/types'
+import type {
+  OpenAIUsageMultiplierEstimate,
+  OpenAIUsageMultiplierTierEstimate,
+  UserSubscription
+} from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateOnly } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
@@ -318,7 +394,34 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
+const openAIUsageMultiplier = ref<OpenAIUsageMultiplierEstimate | null>(null)
 const loading = ref(true)
+
+const defaultOpenAIUsageTiers: OpenAIUsageMultiplierTierEstimate[] = [
+  { tier: '1x', baseline_quota_usd: 125, telemetry_quota_usd: null, dynamic_multiplier: null },
+  { tier: '20x', baseline_quota_usd: 2500, telemetry_quota_usd: null, dynamic_multiplier: null }
+]
+
+const hasActiveOpenAISubscription = computed(() =>
+  subscriptions.value.some(isActiveOpenAISubscription)
+)
+
+const openAIUsageTiers = computed(() => {
+  const responseTiers = openAIUsageMultiplier.value?.tiers ?? []
+  return defaultOpenAIUsageTiers.map(
+    (fallback) => responseTiers.find((tier) => tier.tier === fallback.tier) ?? fallback
+  )
+})
+
+function isActiveOpenAISubscription(subscription: UserSubscription): boolean {
+  if (subscription.status !== 'active' || subscription.group?.platform !== 'openai') {
+    return false
+  }
+  if (!subscription.expires_at) return true
+
+  const expiresAt = new Date(subscription.expires_at).getTime()
+  return !Number.isNaN(expiresAt) && expiresAt > Date.now()
+}
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)
@@ -332,12 +435,41 @@ async function loadSubscriptions() {
   try {
     loading.value = true
     subscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    openAIUsageMultiplier.value = null
+    if (hasActiveOpenAISubscription.value) {
+      void loadOpenAIUsageMultiplier()
+    }
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
   }
+}
+
+async function loadOpenAIUsageMultiplier() {
+  try {
+    openAIUsageMultiplier.value = await subscriptionsAPI.getOpenAIUsageMultiplier()
+  } catch {
+    openAIUsageMultiplier.value = null
+  }
+}
+
+function formatQuota(value: number | null | undefined): string {
+  if (value == null) return ''
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(value)
+}
+
+function formatMultiplier(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value)
 }
 
 function getProgressWidth(used: number | undefined, limit: number | null | undefined): string {

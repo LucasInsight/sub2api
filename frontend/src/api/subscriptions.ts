@@ -4,7 +4,12 @@
  */
 
 import { apiClient } from './client'
-import type { UserSubscription, SubscriptionProgress, SubscriptionProgressInfo } from '@/types'
+import type {
+  OpenAIUsageMultiplierEstimate,
+  UserSubscription,
+  SubscriptionProgress,
+  SubscriptionProgressInfo
+} from '@/types'
 
 /**
  * Subscription summary for user dashboard
@@ -34,6 +39,16 @@ export interface SubscriptionSummary {
  */
 export async function getMySubscriptions(): Promise<UserSubscription[]> {
   const response = await apiClient.get<UserSubscription[]>('/subscriptions')
+  return response.data
+}
+
+/**
+ * Get the display-only OpenAI telemetry multiplier estimate.
+ */
+export async function getOpenAIUsageMultiplier(): Promise<OpenAIUsageMultiplierEstimate> {
+  const response = await apiClient.get<OpenAIUsageMultiplierEstimate>(
+    '/subscriptions/openai-usage-multiplier'
+  )
   return response.data
 }
 
@@ -75,6 +90,7 @@ export async function getSubscriptionProgress(
 
 export default {
   getMySubscriptions,
+  getOpenAIUsageMultiplier,
   getActiveSubscriptions,
   getSubscriptionsProgress,
   getSubscriptionSummary,

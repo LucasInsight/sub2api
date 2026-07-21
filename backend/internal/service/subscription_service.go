@@ -47,13 +47,14 @@ var (
 
 // SubscriptionService 订阅服务
 type SubscriptionService struct {
-	groupRepo            GroupRepository
-	userSubRepo          UserSubscriptionRepository
-	apiKeyRepo           APIKeyRepository
-	billingCacheService  *BillingCacheService
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	official7dResetRepo  OpenAIOfficial7dResetRepository
-	entClient            *dbent.Client
+	groupRepo                 GroupRepository
+	userSubRepo               UserSubscriptionRepository
+	apiKeyRepo                APIKeyRepository
+	billingCacheService       *BillingCacheService
+	authCacheInvalidator      APIKeyAuthCacheInvalidator
+	official7dResetRepo       OpenAIOfficial7dResetRepository
+	openAIQuotaEstimateSource OpenAIQuotaEstimateSource
+	entClient                 *dbent.Client
 
 	// L1 缓存：加速中间件热路径的订阅查询
 	subCacheL1     *ristretto.Cache

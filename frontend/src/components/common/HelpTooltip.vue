@@ -13,7 +13,12 @@ const props = withDefaults(defineProps<{
 const show = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
+const placement = ref<'top' | 'bottom'>('top')
 const tooltipStyle = ref({ top: '0px', left: '0px' })
+const tooltipContentStyle = ref({ maxHeight: 'none' })
+
+const tooltipGap = 8
+const viewportPadding = 8
 
 function openTooltip() {
   show.value = true
@@ -31,6 +36,18 @@ function onEnter() {
 
 function onLeave() {
   if (props.trigger !== 'hover') return
+  closeTooltip()
+}
+
+function onFocusIn() {
+  if (props.trigger !== 'hover') return
+  openTooltip()
+}
+
+function onFocusOut(event: FocusEvent) {
+  if (props.trigger !== 'hover') return
+  const nextTarget = event.relatedTarget as Node | null
+  if (nextTarget && triggerRef.value?.contains(nextTarget)) return
   closeTooltip()
 }
 
@@ -65,12 +82,40 @@ function onViewportChange() {
 }
 
 function updatePosition() {
-  const el = triggerRef.value
-  if (!el) return
-  const rect = el.getBoundingClientRect()
+  const trigger = triggerRef.value
+  const tooltip = tooltipRef.value
+  if (!trigger || !tooltip) return
+
+  const triggerRect = trigger.getBoundingClientRect()
+  const tooltipRect = tooltip.getBoundingClientRect()
+  const spaceAbove = triggerRect.top - tooltipGap - viewportPadding
+  const spaceBelow = window.innerHeight - triggerRect.bottom - tooltipGap - viewportPadding
+
+  if (tooltipRect.height <= spaceAbove) {
+    placement.value = 'top'
+  } else if (tooltipRect.height <= spaceBelow) {
+    placement.value = 'bottom'
+  } else {
+    placement.value = spaceBelow >= spaceAbove ? 'bottom' : 'top'
+  }
+
+  const tooltipHalfWidth = tooltipRect.width / 2
+  const minCenter = viewportPadding + tooltipHalfWidth
+  const maxCenter = window.innerWidth - viewportPadding - tooltipHalfWidth
+  const desiredCenter = triggerRect.left + triggerRect.width / 2
+  const left = minCenter <= maxCenter
+    ? Math.min(Math.max(desiredCenter, minCenter), maxCenter)
+    : window.innerWidth / 2
+  const availableHeight = placement.value === 'top' ? spaceAbove : spaceBelow
+
   tooltipStyle.value = {
-    top: `${rect.top + window.scrollY}px`,
-    left: `${rect.left + rect.width / 2 + window.scrollX}px`,
+    top: placement.value === 'top'
+      ? `${triggerRect.top - tooltipGap}px`
+      : `${triggerRect.bottom + tooltipGap}px`,
+    left: `${left}px`,
+  }
+  tooltipContentStyle.value = {
+    maxHeight: `${Math.max(availableHeight - 24, 0)}px`,
   }
 }
 
@@ -95,6 +140,8 @@ onBeforeUnmount(() => {
     class="group relative ml-1 inline-flex items-center align-middle"
     @mouseenter="onEnter"
     @mouseleave="onLeave"
+    @focusin="onFocusIn"
+    @focusout="onFocusOut"
     @click="onClick"
   >
     <!-- Trigger Icon -->
@@ -120,11 +167,13 @@ onBeforeUnmount(() => {
         ref="tooltip"
         v-show="show"
         role="tooltip"
+        :data-placement="placement"
         :class="[
-          'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          'fixed z-[99999] -translate-x-1/2 rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          placement === 'top' ? '-translate-y-full' : '',
           props.widthClass,
         ]"
-        :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
+        :style="tooltipStyle"
       >
         <button
           v-if="props.trigger === 'click'"
@@ -137,8 +186,15 @@ onBeforeUnmount(() => {
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
-        <slot>{{ content }}</slot>
-        <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800"></div>
+        <div class="overflow-y-auto" :style="tooltipContentStyle">
+          <slot>{{ content }}</slot>
+        </div>
+        <div
+          :class="[
+            'absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800',
+            placement === 'top' ? '-bottom-1' : '-top-1'
+          ]"
+        ></div>
       </div>
     </Teleport>
   </div>

@@ -88,6 +88,23 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 	response.Success(c, out)
 }
 
+// GetOpenAIUsageMultiplier returns the platform-wide conservative OpenAI
+// multiplier estimate for users with an active OpenAI subscription.
+func (h *SubscriptionHandler) GetOpenAIUsageMultiplier(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+
+	estimate, err := h.subscriptionService.GetOpenAIUsageMultiplier(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, estimate)
+}
+
 // GetProgress handles getting subscription progress for current user
 // GET /api/v1/subscriptions/progress
 func (h *SubscriptionHandler) GetProgress(c *gin.Context) {

@@ -50,6 +50,9 @@ func ProvideSubscriptionService(
 	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
 		svc.official7dResetRepo = tracker
 	}
+	if source, ok := accountRepo.(OpenAIQuotaEstimateSource); ok {
+		svc.openAIQuotaEstimateSource = source
+	}
 	return svc
 }
 

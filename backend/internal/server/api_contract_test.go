@@ -443,6 +443,77 @@ func TestAPIContracts(t *testing.T) {
 			}`,
 		},
 		{
+			name: "GET /api/v1/subscriptions/openai-usage-multiplier",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.userSubRepo.SetActiveByUserID(1, []service.UserSubscription{{
+					Status:    service.SubscriptionStatusActive,
+					ExpiresAt: time.Date(2099, 1, 2, 3, 4, 5, 0, time.UTC),
+					Group:     &service.Group{Platform: service.PlatformOpenAI},
+				}})
+				deps.accountRepo.candidates = []service.OpenAIQuotaEstimateCandidate{{
+					PlanType:    "plus",
+					Status:      service.StatusActive,
+					Schedulable: true,
+					Extra: map[string]any{
+						"codex_7d_quota_estimate_min":           113.64,
+						"codex_7d_quota_estimate_max":           120.0,
+						"codex_7d_quota_estimate_coverage_from": 20.0,
+						"codex_7d_quota_estimate_coverage_to":   30.0,
+					},
+				}, {
+					PlanType:    "pro",
+					Status:      service.StatusActive,
+					Schedulable: true,
+					Extra: map[string]any{
+						"codex_7d_quota_estimate_min":                2488.25,
+						"codex_7d_quota_estimate_max":                2504.75,
+						"codex_7d_quota_estimate_coverage_from":      10.0,
+						"codex_7d_quota_estimate_coverage_to":        20.0,
+						"codex_7d_quota_estimate_prev_min":           2488.25,
+						"codex_7d_quota_estimate_prev_max":           2504.75,
+						"codex_7d_quota_estimate_prev_coverage_from": 50.0,
+						"codex_7d_quota_estimate_prev_coverage_to":   60.0,
+					},
+				}}
+			},
+			method:     http.MethodGet,
+			path:       "/api/v1/subscriptions/openai-usage-multiplier",
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"tiers": [
+						{
+							"tier": "1x",
+							"baseline_quota_usd": 125,
+							"telemetry_quota_usd": 113.64,
+							"dynamic_multiplier": 1.1
+						},
+						{
+							"tier": "20x",
+							"baseline_quota_usd": 2500,
+							"telemetry_quota_usd": 2488.25,
+							"dynamic_multiplier": 1.01
+						}
+					],
+					"dynamic_multiplier": 1.1
+				}
+			}`,
+		},
+		{
+			name:       "GET /api/v1/subscriptions/openai-usage-multiplier requires active OpenAI subscription",
+			method:     http.MethodGet,
+			path:       "/api/v1/subscriptions/openai-usage-multiplier",
+			wantStatus: http.StatusForbidden,
+			wantJSON: `{
+				"code": 403,
+				"message": "an active OpenAI subscription is required",
+				"reason": "ACTIVE_OPENAI_SUBSCRIPTION_REQUIRED"
+			}`,
+		},
+		{
 			name: "GET /api/v1/redeem/history",
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
@@ -1343,6 +1414,7 @@ type contractDeps struct {
 	usageRepo   *stubUsageLogRepo
 	settingRepo *stubSettingRepo
 	redeemRepo  *stubRedeemCodeRepo
+	accountRepo *stubAccountRepo
 }
 
 func newContractDeps(t *testing.T) *contractDeps {
@@ -1372,7 +1444,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	apiKeyCache := stubApiKeyCache{}
 	groupRepo := &stubGroupRepo{}
 	userSubRepo := &stubUserSubscriptionRepo{}
-	accountRepo := stubAccountRepo{}
+	accountRepo := &stubAccountRepo{}
 	proxyRepo := stubProxyRepo{}
 	redeemRepo := &stubRedeemCodeRepo{}
 
@@ -1389,7 +1461,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	usageRepo := newStubUsageLogRepo()
 	usageService := service.NewUsageService(usageRepo, userRepo, nil, nil)
 
-	subscriptionService := service.NewSubscriptionService(groupRepo, userSubRepo, nil, nil, cfg)
+	subscriptionService := service.ProvideSubscriptionService(groupRepo, userSubRepo, apiKeyRepo, accountRepo, nil, nil, nil, cfg)
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
 
 	redeemService := service.NewRedeemService(redeemRepo, userRepo, subscriptionService, nil, nil, nil, nil, nil)
@@ -1398,7 +1470,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
@@ -1444,6 +1516,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Subs := v1.Group("")
 	v1Subs.Use(jwtAuth)
 	v1Subs.GET("/subscriptions", subscriptionHandler.List)
+	v1Subs.GET("/subscriptions/openai-usage-multiplier", subscriptionHandler.GetOpenAIUsageMultiplier)
 
 	v1Redeem := v1.Group("")
 	v1Redeem.Use(jwtAuth)
@@ -1464,6 +1537,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 		usageRepo:   usageRepo,
 		settingRepo: settingRepo,
 		redeemRepo:  redeemRepo,
+		accountRepo: accountRepo,
 	}
 }
 
@@ -1752,6 +1826,11 @@ func (stubGroupRepo) CreateFromSource(ctx context.Context, group *service.Group,
 
 type stubAccountRepo struct {
 	bulkUpdateIDs []int64
+	candidates    []service.OpenAIQuotaEstimateCandidate
+}
+
+func (s *stubAccountRepo) ListOpenAIQuotaEstimateCandidates(context.Context) ([]service.OpenAIQuotaEstimateCandidate, error) {
+	return append([]service.OpenAIQuotaEstimateCandidate(nil), s.candidates...), nil
 }
 
 func (s *stubAccountRepo) Create(ctx context.Context, account *service.Account) error {

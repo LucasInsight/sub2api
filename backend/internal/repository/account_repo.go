@@ -1834,6 +1834,43 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 	return r.accountsToService(ctx, accounts)
 }
 
+func (r *accountRepository) ListOpenAIQuotaEstimateCandidates(ctx context.Context) ([]service.OpenAIQuotaEstimateCandidate, error) {
+	now := time.Now()
+	accounts, err := r.client.Account.Query().
+		Where(
+			dbaccount.PlatformEQ(service.PlatformOpenAI),
+			dbaccount.TypeEQ(service.AccountTypeOAuth),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+			dbaccount.Or(dbaccount.ExpiresAtIsNil(), dbaccount.ExpiresAtGT(now)),
+		).
+		Select(
+			dbaccount.FieldStatus,
+			dbaccount.FieldSchedulable,
+			dbaccount.FieldExpiresAt,
+			dbaccount.FieldCredentials,
+			dbaccount.FieldExtra,
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := make([]service.OpenAIQuotaEstimateCandidate, 0, len(accounts))
+	for i := range accounts {
+		account := accounts[i]
+		planType, _ := account.Credentials["plan_type"].(string)
+		candidates = append(candidates, service.OpenAIQuotaEstimateCandidate{
+			PlanType:    planType,
+			Status:      account.Status,
+			Schedulable: account.Schedulable,
+			ExpiresAt:   account.ExpiresAt,
+			Extra:       copyJSONMap(account.Extra),
+		})
+	}
+	return candidates, nil
+}
+
 func (r *accountRepository) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]service.Account, error) {
 	// 单平台查询复用多平台逻辑，保持过滤条件与排序策略一致。
 	return r.queryAccountsByGroup(ctx, groupID, accountGroupQueryOptions{
