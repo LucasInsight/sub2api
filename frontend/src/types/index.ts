@@ -1796,12 +1796,14 @@ export interface OpenAIUsageMultiplierTierEstimate {
   tier: '1x' | '20x'
   baseline_quota_usd: number
   telemetry_quota_usd: number | null
+  telemetry_updated_at?: string | null
   dynamic_multiplier: number | null
 }
 
 export interface OpenAIUsageMultiplierEstimate {
   tiers: OpenAIUsageMultiplierTierEstimate[]
   dynamic_multiplier: number | null
+  updated_at?: string | null
 }
 
 export interface SubscriptionProgress {

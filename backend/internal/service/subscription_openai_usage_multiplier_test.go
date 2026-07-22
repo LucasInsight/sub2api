@@ -9,6 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	openAIUsageMultiplierCurrentUpdatedAt  = "2026-07-21T08:00:00Z"
+	openAIUsageMultiplierPreviousUpdatedAt = "2026-07-14T08:00:00Z"
+)
+
 type openAIUsageMultiplierSubscriptionRepoStub struct {
 	userSubRepoNoop
 	active []UserSubscription
@@ -44,6 +49,7 @@ func quotaEstimateCandidate(planType string, min, max, coverageFrom float64) Ope
 		Extra: map[string]any{
 			"codex_7d_quota_estimate_min":           min,
 			"codex_7d_quota_estimate_max":           max,
+			"codex_7d_quota_estimate_updated_at":    openAIUsageMultiplierCurrentUpdatedAt,
 			"codex_7d_quota_estimate_coverage_from": coverageFrom,
 			"codex_7d_quota_estimate_coverage_to":   coverageFrom + 10,
 		},
@@ -58,6 +64,7 @@ func quotaEstimateCandidateWithPrevious(
 	candidate := quotaEstimateCandidate(planType, currentMin, currentMax, currentCoverageFrom)
 	candidate.Extra["codex_7d_quota_estimate_prev_min"] = previousMin
 	candidate.Extra["codex_7d_quota_estimate_prev_max"] = previousMax
+	candidate.Extra["codex_7d_quota_estimate_prev_updated_at"] = openAIUsageMultiplierPreviousUpdatedAt
 	candidate.Extra["codex_7d_quota_estimate_prev_coverage_from"] = previousCoverageFrom
 	candidate.Extra["codex_7d_quota_estimate_prev_coverage_to"] = previousCoverageFrom + 10
 	return candidate
@@ -99,6 +106,7 @@ func TestSubscriptionServiceGetOpenAIUsageMultiplierCalculatesBothTelemetryTiers
 	require.NotNil(t, oneX.DynamicMultiplier)
 	require.InDelta(t, 113.64, *oneX.TelemetryQuotaUSD, 1e-9)
 	require.InDelta(t, 1.1, *oneX.DynamicMultiplier, 1e-9)
+	require.Equal(t, openAIUsageMultiplierPreviousUpdatedAt, oneX.TelemetryUpdatedAt)
 
 	twentyX := requireMultiplierTier(t, result, "20x")
 	require.Equal(t, 2500.0, twentyX.BaselineQuotaUSD)
@@ -106,8 +114,10 @@ func TestSubscriptionServiceGetOpenAIUsageMultiplierCalculatesBothTelemetryTiers
 	require.NotNil(t, twentyX.DynamicMultiplier)
 	require.InDelta(t, 2334.83, *twentyX.TelemetryQuotaUSD, 1e-9)
 	require.InDelta(t, 1.08, *twentyX.DynamicMultiplier, 1e-9)
+	require.Equal(t, openAIUsageMultiplierPreviousUpdatedAt, twentyX.TelemetryUpdatedAt)
 	require.NotNil(t, result.DynamicMultiplier)
 	require.InDelta(t, 1.1, *result.DynamicMultiplier, 1e-9)
+	require.Equal(t, openAIUsageMultiplierPreviousUpdatedAt, result.UpdatedAt)
 }
 
 func TestRoundUpOpenAIUsageMultiplierKeepsTwoDecimalPlaces(t *testing.T) {
@@ -141,6 +151,8 @@ func TestSubscriptionServiceGetOpenAIUsageMultiplierUsesLowerTrustedCurrentOrPre
 	require.InDelta(t, 100, *oneX.TelemetryQuotaUSD, 1e-9)
 	require.NotNil(t, oneX.DynamicMultiplier)
 	require.InDelta(t, 1.25, *oneX.DynamicMultiplier, 1e-9)
+	require.Equal(t, openAIUsageMultiplierPreviousUpdatedAt, oneX.TelemetryUpdatedAt)
+	require.Equal(t, openAIUsageMultiplierPreviousUpdatedAt, result.UpdatedAt)
 }
 
 func TestSubscriptionServiceGetOpenAIUsageMultiplierFallsBackToOnlyTrustedRound(t *testing.T) {

@@ -116,6 +116,7 @@ export default {
     noActiveSubscriptionsDesc: '您没有任何有效订阅。请联系管理员获取订阅。',
     failedToLoad: '加载订阅失败',
     openaiUsageTip: {
+      label: '动态倍率',
       title: 'OpenAI 动态倍率说明',
       ariaLabel: '查看 OpenAI 动态倍率说明',
       tierTitle: '{tier} 配额',
@@ -124,6 +125,7 @@ export default {
       tierFormula: '动态倍率：{baseline} ÷ {telemetry} = {value}x',
       noTelemetryQuota: '暂无遥测配额',
       currentMultiplier: '当前动态倍率：{value}x',
+      updatedAt: '遥测时间：{time}',
       noMultiplier: '暂无动态倍率估算'
     },
     status: {

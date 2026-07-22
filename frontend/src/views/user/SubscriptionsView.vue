@@ -53,15 +53,26 @@
                     <template #trigger>
                       <button
                         type="button"
-                        class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 transition-colors hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-500 dark:hover:text-emerald-400"
+                        class="inline-flex h-5 shrink-0 items-center justify-center gap-1 text-[11px] font-medium text-gray-400 transition-colors hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-500 dark:hover:text-emerald-400"
                         :aria-label="t('userSubscriptions.openaiUsageTip.ariaLabel')"
                       >
+                        <span>{{ t('userSubscriptions.openaiUsageTip.label') }}</span>
                         <Icon name="infoCircle" size="sm" />
                       </button>
                     </template>
                     <div class="space-y-3">
                       <p class="font-semibold text-white">
                         {{ t('userSubscriptions.openaiUsageTip.title') }}
+                      </p>
+                      <p
+                        v-if="openAIUsageMultiplier?.updated_at"
+                        class="text-gray-400"
+                      >
+                        {{
+                          t('userSubscriptions.openaiUsageTip.updatedAt', {
+                            time: formatDateTime(openAIUsageMultiplier.updated_at)
+                          })
+                        }}
                       </p>
                       <div
                         v-for="tier in openAIUsageTiers"
@@ -100,20 +111,22 @@
                         </template>
                         <p v-else>{{ t('userSubscriptions.openaiUsageTip.noTelemetryQuota') }}</p>
                       </div>
-                      <p class="border-t border-white/15 pt-2 font-medium text-emerald-200">
-                        <template v-if="openAIUsageMultiplier?.dynamic_multiplier != null">
-                          {{
-                            t('userSubscriptions.openaiUsageTip.currentMultiplier', {
-                              value: formatMultiplier(
-                                openAIUsageMultiplier.dynamic_multiplier
-                              )
-                            })
-                          }}
-                        </template>
-                        <template v-else>
-                          {{ t('userSubscriptions.openaiUsageTip.noMultiplier') }}
-                        </template>
-                      </p>
+                      <div class="border-t border-white/15 pt-2">
+                        <p class="font-medium text-emerald-200">
+                          <template v-if="openAIUsageMultiplier?.dynamic_multiplier != null">
+                            {{
+                              t('userSubscriptions.openaiUsageTip.currentMultiplier', {
+                                value: formatMultiplier(
+                                  openAIUsageMultiplier.dynamic_multiplier
+                                )
+                              })
+                            }}
+                          </template>
+                          <template v-else>
+                            {{ t('userSubscriptions.openaiUsageTip.noMultiplier') }}
+                          </template>
+                        </p>
+                      </div>
                     </div>
                   </HelpTooltip>
                 </div>
@@ -374,7 +387,7 @@ import type {
 import AppLayout from '@/components/layout/AppLayout.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateOnly } from '@/utils/format'
+import { formatDateOnly, formatDateTime } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
 import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'

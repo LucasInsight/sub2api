@@ -458,6 +458,7 @@ func TestAPIContracts(t *testing.T) {
 					Extra: map[string]any{
 						"codex_7d_quota_estimate_min":           113.64,
 						"codex_7d_quota_estimate_max":           120.0,
+						"codex_7d_quota_estimate_updated_at":    "2026-07-21T08:00:00Z",
 						"codex_7d_quota_estimate_coverage_from": 20.0,
 						"codex_7d_quota_estimate_coverage_to":   30.0,
 					},
@@ -472,6 +473,7 @@ func TestAPIContracts(t *testing.T) {
 						"codex_7d_quota_estimate_coverage_to":        20.0,
 						"codex_7d_quota_estimate_prev_min":           2488.25,
 						"codex_7d_quota_estimate_prev_max":           2504.75,
+						"codex_7d_quota_estimate_prev_updated_at":    "2026-07-14T08:00:00Z",
 						"codex_7d_quota_estimate_prev_coverage_from": 50.0,
 						"codex_7d_quota_estimate_prev_coverage_to":   60.0,
 					},
@@ -489,16 +491,19 @@ func TestAPIContracts(t *testing.T) {
 							"tier": "1x",
 							"baseline_quota_usd": 125,
 							"telemetry_quota_usd": 113.64,
+							"telemetry_updated_at": "2026-07-21T08:00:00Z",
 							"dynamic_multiplier": 1.1
 						},
 						{
 							"tier": "20x",
 							"baseline_quota_usd": 2500,
 							"telemetry_quota_usd": 2488.25,
+							"telemetry_updated_at": "2026-07-14T08:00:00Z",
 							"dynamic_multiplier": 1.01
 						}
 					],
-					"dynamic_multiplier": 1.1
+					"dynamic_multiplier": 1.1,
+					"updated_at": "2026-07-21T08:00:00Z"
 				}
 			}`,
 		},

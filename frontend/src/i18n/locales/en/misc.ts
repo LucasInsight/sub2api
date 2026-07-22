@@ -119,6 +119,7 @@ export default {
       "You don't have any active subscriptions. Contact administrator to get one.",
     failedToLoad: 'Failed to load subscriptions',
     openaiUsageTip: {
+      label: 'Dynamic multiplier',
       title: 'OpenAI dynamic multiplier details',
       ariaLabel: 'View OpenAI dynamic multiplier details',
       tierTitle: '{tier} quota',
@@ -127,6 +128,7 @@ export default {
       tierFormula: 'Dynamic multiplier: {baseline} / {telemetry} = {value}x',
       noTelemetryQuota: 'No telemetry quota available',
       currentMultiplier: 'Current dynamic multiplier: {value}x',
+      updatedAt: 'Telemetry time: {time}',
       noMultiplier: 'No dynamic multiplier estimate available'
     },
     status: {

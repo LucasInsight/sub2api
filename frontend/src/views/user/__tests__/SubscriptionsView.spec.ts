@@ -12,6 +12,7 @@ const { getMySubscriptions, getOpenAIUsageMultiplier, showError, push } = vi.hoi
 }))
 
 const messages: Record<string, string> = {
+  'userSubscriptions.openaiUsageTip.label': 'Dynamic multiplier',
   'userSubscriptions.openaiUsageTip.title': 'OpenAI dynamic multiplier details',
   'userSubscriptions.openaiUsageTip.ariaLabel': 'View OpenAI dynamic multiplier details',
   'userSubscriptions.openaiUsageTip.tierTitle': '{tier} quota',
@@ -20,6 +21,7 @@ const messages: Record<string, string> = {
   'userSubscriptions.openaiUsageTip.tierFormula': 'Dynamic multiplier: {baseline} / {telemetry} = {value}x',
   'userSubscriptions.openaiUsageTip.noTelemetryQuota': 'No telemetry quota available',
   'userSubscriptions.openaiUsageTip.currentMultiplier': 'Current dynamic multiplier: {value}x',
+  'userSubscriptions.openaiUsageTip.updatedAt': 'Telemetry time: {time}',
   'userSubscriptions.openaiUsageTip.noMultiplier': 'No dynamic multiplier estimate available',
   'userSubscriptions.expires': 'Expires',
   'userSubscriptions.noExpiration': 'No expiration',
@@ -163,16 +165,19 @@ describe('SubscriptionsView OpenAI dynamic multiplier tip', () => {
           tier: '1x',
           baseline_quota_usd: 125,
           telemetry_quota_usd: 113.64,
+          telemetry_updated_at: '2026-07-14T08:00:00Z',
           dynamic_multiplier: 1.1,
         },
         {
           tier: '20x',
           baseline_quota_usd: 2500,
           telemetry_quota_usd: 2334.83,
+          telemetry_updated_at: '2026-07-13T08:00:00Z',
           dynamic_multiplier: 1.08,
         },
       ],
       dynamic_multiplier: 1.1,
+      updated_at: '2026-07-14T08:00:00Z',
     })
     showError.mockReset()
     push.mockReset()
@@ -194,6 +199,7 @@ describe('SubscriptionsView OpenAI dynamic multiplier tip', () => {
     expect(wrapper.find('[data-testid="openai-usage-tip"]').exists()).toBe(false)
     const triggers = wrapper.findAll('[data-testid="openai-dynamic-multiplier-trigger"]')
     expect(triggers).toHaveLength(2)
+    expect(triggers[0].text()).toContain('Dynamic multiplier')
     expect(triggers[0].element.parentElement?.textContent).toContain('OpenAI')
     expect(wrapper.text()).toContain('Rate: ×1.3')
     expect(wrapper.text()).not.toContain('Current dynamic multiplier')
@@ -215,6 +221,9 @@ describe('SubscriptionsView OpenAI dynamic multiplier tip', () => {
     expect(tooltipText).toContain('Telemetry quota: $2,334.83')
     expect(tooltipText).toContain('Dynamic multiplier: $2,500 / $2,334.83 = 1.08x')
     expect(tooltipText).toContain('Current dynamic multiplier: 1.10x')
+    expect(tooltipText).toContain('Telemetry time:')
+    expect(tooltipText).toContain('2026')
+    expect(tooltipText.indexOf('Telemetry time:')).toBeLessThan(tooltipText.indexOf('1x quota'))
     expect(tooltipText.toLowerCase()).not.toContain('minimum')
     expect(tooltipText.toLowerCase()).not.toContain('maximum')
     expect(tooltipText).not.toContain('20%')

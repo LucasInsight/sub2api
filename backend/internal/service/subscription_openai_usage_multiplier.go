@@ -48,15 +48,22 @@ type OpenAIQuotaEstimateSource interface {
 }
 
 type OpenAIUsageMultiplierTierEstimate struct {
-	Tier              string   `json:"tier"`
-	BaselineQuotaUSD  float64  `json:"baseline_quota_usd"`
-	TelemetryQuotaUSD *float64 `json:"telemetry_quota_usd"`
-	DynamicMultiplier *float64 `json:"dynamic_multiplier"`
+	Tier               string   `json:"tier"`
+	BaselineQuotaUSD   float64  `json:"baseline_quota_usd"`
+	TelemetryQuotaUSD  *float64 `json:"telemetry_quota_usd"`
+	TelemetryUpdatedAt string   `json:"telemetry_updated_at,omitempty"`
+	DynamicMultiplier  *float64 `json:"dynamic_multiplier"`
 }
 
 type OpenAIUsageMultiplierEstimate struct {
 	Tiers             []OpenAIUsageMultiplierTierEstimate `json:"tiers"`
 	DynamicMultiplier *float64                            `json:"dynamic_multiplier"`
+	UpdatedAt         string                              `json:"updated_at,omitempty"`
+}
+
+type trustedOpenAIQuotaEstimate struct {
+	Quota     float64
+	UpdatedAt string
 }
 
 func (s *SubscriptionService) GetOpenAIUsageMultiplier(ctx context.Context, userID int64) (*OpenAIUsageMultiplierEstimate, error) {
@@ -91,16 +98,18 @@ func (s *SubscriptionService) GetOpenAIUsageMultiplier(ctx context.Context, user
 	telemetryByTier := conservativeOpenAIQuotaEstimateByTier(candidates, now)
 	for i := range result.Tiers {
 		tier := &result.Tiers[i]
-		telemetryQuota, ok := telemetryByTier[tier.Tier]
+		telemetry, ok := telemetryByTier[tier.Tier]
 		if !ok {
 			continue
 		}
 
-		multiplier := roundUpOpenAIUsageMultiplier(tier.BaselineQuotaUSD / telemetryQuota)
-		tier.TelemetryQuotaUSD = float64Pointer(telemetryQuota)
+		multiplier := roundUpOpenAIUsageMultiplier(tier.BaselineQuotaUSD / telemetry.Quota)
+		tier.TelemetryQuotaUSD = float64Pointer(telemetry.Quota)
+		tier.TelemetryUpdatedAt = telemetry.UpdatedAt
 		tier.DynamicMultiplier = float64Pointer(multiplier)
 		if result.DynamicMultiplier == nil || multiplier > *result.DynamicMultiplier {
 			result.DynamicMultiplier = float64Pointer(multiplier)
+			result.UpdatedAt = telemetry.UpdatedAt
 		}
 	}
 	return result, nil
@@ -128,8 +137,8 @@ func hasActiveOpenAISubscription(subscriptions []UserSubscription, now time.Time
 	return false
 }
 
-func conservativeOpenAIQuotaEstimateByTier(candidates []OpenAIQuotaEstimateCandidate, now time.Time) map[string]float64 {
-	result := make(map[string]float64, 2)
+func conservativeOpenAIQuotaEstimateByTier(candidates []OpenAIQuotaEstimateCandidate, now time.Time) map[string]trustedOpenAIQuotaEstimate {
+	result := make(map[string]trustedOpenAIQuotaEstimate, 2)
 	for i := range candidates {
 		candidate := &candidates[i]
 		if candidate.Status != StatusActive || !candidate.Schedulable {
@@ -143,12 +152,12 @@ func conservativeOpenAIQuotaEstimateByTier(candidates []OpenAIQuotaEstimateCandi
 			continue
 		}
 		estimate := quotaEstimateFromExtra(candidate.Extra, "7d")
-		quota, ok := trustedOpenAIQuotaEstimateLowerBound(estimate)
+		telemetry, ok := trustedOpenAIQuotaEstimateLowerBound(estimate)
 		if !ok {
 			continue
 		}
-		if current, found := result[tier]; !found || quota < current {
-			result[tier] = quota
+		if current, found := result[tier]; !found || telemetry.Quota < current.Quota {
+			result[tier] = telemetry
 		}
 	}
 	return result
@@ -165,20 +174,23 @@ func openAIUsageMultiplierTier(planType string) (string, bool) {
 	}
 }
 
-func trustedOpenAIQuotaEstimateLowerBound(estimate *QuotaEstimate) (float64, bool) {
+func trustedOpenAIQuotaEstimateLowerBound(estimate *QuotaEstimate) (trustedOpenAIQuotaEstimate, bool) {
 	if estimate == nil {
-		return 0, false
+		return trustedOpenAIQuotaEstimate{}, false
 	}
 
-	var result float64
+	var result trustedOpenAIQuotaEstimate
 	found := false
 	if validTrustedOpenAIQuotaLowerBound(estimate.Min, estimate.CoverageFrom) {
-		result = estimate.Min
+		result = trustedOpenAIQuotaEstimate{Quota: estimate.Min, UpdatedAt: estimate.UpdatedAt}
 		found = true
 	}
 	if estimate.Previous != nil && validTrustedOpenAIQuotaLowerBound(estimate.Previous.Min, estimate.Previous.CoverageFrom) {
-		if !found || estimate.Previous.Min < result {
-			result = estimate.Previous.Min
+		if !found || estimate.Previous.Min < result.Quota {
+			result = trustedOpenAIQuotaEstimate{
+				Quota:     estimate.Previous.Min,
+				UpdatedAt: estimate.Previous.UpdatedAt,
+			}
 		}
 		found = true
 	}
