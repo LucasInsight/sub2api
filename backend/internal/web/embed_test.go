@@ -24,6 +24,16 @@ func init() {
 }
 
 func TestInjectSiteTitle(t *testing.T) {
+	t.Run("maps_legacy_default_site_name_to_xtrust_ai", func(t *testing.T) {
+		html := []byte(`<html><head><title>XTrust-AI - AI API Gateway</title></head><body></body></html>`)
+		settingsJSON := []byte(`{"site_name":"Sub2API"}`)
+
+		result := injectSiteTitle(html, settingsJSON)
+
+		assert.Contains(t, string(result), "<title>XTrust-AI - AI API Gateway</title>")
+		assert.NotContains(t, string(result), "<title>Sub2API")
+	})
+
 	t.Run("replaces_title_with_site_name", func(t *testing.T) {
 		html := []byte(`<html><head><title>Sub2API - AI API Gateway</title></head><body></body></html>`)
 		settingsJSON := []byte(`{"site_name":"MyCustomSite"}`)

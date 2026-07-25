@@ -43,6 +43,13 @@ describe('AppSidebar scroll position persistence', () => {
 })
 
 describe('AppSidebar header styles', () => {
+  it('shows the version to admins and a stable brand subtitle to regular users', () => {
+    expect(componentSource).toContain('<VersionBadge v-if="isAdmin" :version="siteVersion" />')
+    expect(componentSource).toContain('<span v-else class="sidebar-brand-subtitle">AI API Gateway</span>')
+    expect(componentSource).toContain('.sidebar-brand-subtitle {')
+    expect(componentSource).toContain('min-height: 1.5rem;')
+  })
+
   it('does not clip the version badge dropdown', () => {
     const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)
     const sidebarBrandBlockMatch = componentSource.match(/\.sidebar-brand\s*\{[\s\S]*?\n\}/)

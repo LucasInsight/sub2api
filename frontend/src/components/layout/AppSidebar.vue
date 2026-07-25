@@ -24,8 +24,8 @@
         >
           {{ siteName }}
         </router-link>
-        <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
+        <VersionBadge v-if="isAdmin" :version="siteVersion" />
+        <span v-else class="sidebar-brand-subtitle">AI API Gateway</span>
       </div>
     </div>
 
@@ -991,6 +991,22 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-brand-subtitle {
+  display: flex;
+  min-height: 1.5rem;
+  align-items: center;
+  overflow: hidden;
+  color: rgb(107 114 128);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.dark) .sidebar-brand-subtitle {
+  color: rgb(156 163 175);
 }
 
 .sidebar-link-collapsed {

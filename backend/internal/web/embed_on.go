@@ -274,8 +274,15 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 	var cfg struct {
 		SiteName string `json:"site_name"`
 	}
-	if err := json.Unmarshal(settingsJSON, &cfg); err != nil || cfg.SiteName == "" {
+	if err := json.Unmarshal(settingsJSON, &cfg); err != nil {
 		return html
+	}
+	siteName := strings.TrimSpace(cfg.SiteName)
+	if siteName == "" {
+		return html
+	}
+	if strings.EqualFold(siteName, "Sub2API") {
+		siteName = "XTrust-AI"
 	}
 
 	// Find and replace the existing <title>...</title>
@@ -285,7 +292,7 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 		return html
 	}
 
-	newTitle := []byte("<title>" + htmlpkg.EscapeString(cfg.SiteName) + " - AI API Gateway</title>")
+	newTitle := []byte("<title>" + htmlpkg.EscapeString(siteName) + " - AI API Gateway</title>")
 	var buf bytes.Buffer
 	buf.Write(html[:titleStart])
 	buf.Write(newTitle)

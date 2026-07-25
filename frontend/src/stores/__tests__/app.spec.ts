@@ -411,6 +411,22 @@ describe('useAppStore', () => {
       expect(store.publicSettingsLoaded).toBe(true)
     })
 
+    it('将注入配置中的旧默认站点名映射为新品牌', () => {
+      const windowAny = window as any
+      windowAny.__APP_CONFIG__ = {
+        site_name: 'Sub2API',
+        site_logo: '',
+        version: '1.0.0',
+      }
+
+      const store = useAppStore()
+      store.initFromInjectedConfig()
+
+      expect(store.siteName).toBe('XTrust-AI')
+      expect(store.cachedPublicSettings?.site_name).toBe('XTrust-AI')
+      expect(windowAny.__APP_CONFIG__.site_name).toBe('XTrust-AI')
+    })
+
     it('无注入配置时返回 false', () => {
       const store = useAppStore()
       const result = store.initFromInjectedConfig()
