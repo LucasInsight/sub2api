@@ -71,6 +71,7 @@ function publicSettings(overrides: Record<string, unknown> = {}) {
     email_verify_enabled: false,
     promo_code_enabled: false,
     invitation_code_enabled: false,
+    affiliate_enabled: false,
     turnstile_enabled: false,
     turnstile_site_key: '',
     site_name: 'Sub2API',
@@ -100,8 +101,9 @@ function mountView() {
         WechatOAuthSection: { template: '<div data-testid="wechat-oauth"></div>' },
         OidcOAuthSection: { template: '<div data-testid="oidc-oauth"></div>' },
         LoginAgreementPrompt: true,
-        TurnstileWidget: true,
+        TurnstileWidget: { template: '<div data-testid="turnstile-widget" />' },
         RouterLink: { template: '<a><slot /></a>' },
+        transition: false,
       },
     },
   })
@@ -160,5 +162,46 @@ describe('RegisterView', () => {
 
     expect(wrapper.find('input#email').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'LoginAgreementPrompt' }).exists()).toBe(true)
+  })
+})
+
+describe('RegisterView invitation layout', () => {
+  beforeEach(() => {
+    getPublicSettingsMock.mockReset()
+    getPublicSettingsMock.mockResolvedValue(publicSettings({
+      affiliate_enabled: true,
+      turnstile_enabled: true,
+      turnstile_site_key: 'site-key',
+    }))
+  })
+
+  it('keeps the optional affiliate invitation field before Turnstile', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const invitationField = wrapper.get('[data-testid="affiliate-invitation-field"]')
+    const turnstile = wrapper.get('[data-testid="registration-turnstile"]')
+
+    expect(invitationField.get('input').attributes('id')).toBe('affiliate_code')
+    expect(invitationField.text()).toContain('common.optional')
+    expect(
+      invitationField.element.compareDocumentPosition(turnstile.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('uses the mandatory invitation field without duplicating the affiliate field', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce(publicSettings({
+      affiliate_enabled: true,
+      invitation_code_enabled: true,
+      turnstile_enabled: true,
+      turnstile_site_key: 'site-key',
+    }))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-invitation-field"]').exists()).toBe(false)
+    expect(wrapper.get('#invitation_code').exists()).toBe(true)
   })
 })

@@ -88,7 +88,7 @@ func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
 	require.Equal(t, [][3]bool{{true, true, true}, {true, true, true}}, subRepo.usageWindowFlags)
 	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.fiveHourStarts[1])
 	require.Equal(t, subRepo.calendarStarts[0], subRepo.calendarStarts[1])
-	require.Equal(t, startOfDay(subRepo.fiveHourStarts[0]), subRepo.calendarStarts[0])
+	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.calendarStarts[0])
 	require.True(t, tracker.markHandled)
 	require.Equal(t, []int64{7}, tracker.handledIDs)
 }

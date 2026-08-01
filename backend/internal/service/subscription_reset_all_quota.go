@@ -38,7 +38,7 @@ func (s *SubscriptionService) resetSubscriptionQuotaWindows(
 			windows.daily,
 			windows.weekly,
 			windows.monthly,
-			startOfDay(now),
+			now,
 		); err != nil {
 			return err
 		}

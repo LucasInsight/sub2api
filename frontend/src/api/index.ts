@@ -20,6 +20,7 @@ export { userChannelsAPI } from './channels'
 export * as batchImageAPI from './batchImage'
 export { totpAPI } from './totp'
 export { getCurrentIPGeo, type CurrentIPGeo, type IPGeoSupportStatus } from './ipGeo'
+export { passkeyAPI, type PasskeyCredentialSummary } from './passkey'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
 

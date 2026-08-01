@@ -379,13 +379,20 @@ func (r *userSubscriptionRepository) UpdateNotes(ctx context.Context, subscripti
 
 func (r *userSubscriptionRepository) ActivateWindows(ctx context.Context, id int64, fiveHourStart, calendarWindowStart time.Time) error {
 	client := clientFromContext(ctx, r.client)
-	_, err := client.UserSubscription.UpdateOneID(id).
+	n, err := client.UserSubscription.Update().
+		Where(
+			usersubscription.IDEQ(id),
+			usersubscription.FiveHourWindowStartIsNil(),
+			usersubscription.DailyWindowStartIsNil(),
+			usersubscription.WeeklyWindowStartIsNil(),
+			usersubscription.MonthlyWindowStartIsNil(),
+		).
 		SetFiveHourWindowStart(fiveHourStart).
 		SetDailyWindowStart(calendarWindowStart).
 		SetWeeklyWindowStart(calendarWindowStart).
 		SetMonthlyWindowStart(calendarWindowStart).
 		Save(ctx)
-	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
+	return r.translateConditionalWindowReset(ctx, client, id, n, err)
 }
 
 func (r *userSubscriptionRepository) ActivateFiveHourWindow(ctx context.Context, id int64, fiveHourStart time.Time) error {
