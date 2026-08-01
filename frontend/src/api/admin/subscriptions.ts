@@ -169,7 +169,7 @@ export async function getResetAllQuotaStatus(): Promise<ResetAllQuotaStatus> {
   return data
 }
 
-/** Reset every active subscription after an observed OpenAI 7-day early reset. */
+/** Reset every active subscription quota. */
 export async function resetAllQuota(idempotencyKey: string): Promise<ResetAllQuotaResult> {
   const { data } = await apiClient.post<ResetAllQuotaResult>(
     '/admin/subscriptions/reset-all-quota',

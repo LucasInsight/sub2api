@@ -40,7 +40,6 @@ var (
 	ErrMonthlyLimitExceeded        = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
 	ErrSubscriptionNilInput        = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
 	ErrAdjustWouldExpire           = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
-	ErrOfficialEarlyResetRequired  = infraerrors.Conflict("OFFICIAL_EARLY_RESET_REQUIRED", "an unhandled OpenAI 7-day early reset is required")
 	ErrNoActiveSubscriptions       = infraerrors.Conflict("NO_ACTIVE_SUBSCRIPTIONS", "no active subscriptions are available to reset")
 	ErrResetAllQuotaUnavailable    = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
 )

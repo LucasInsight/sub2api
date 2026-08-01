@@ -116,12 +116,9 @@ func (s *SubscriptionService) AdminResetAllQuotaStatus(ctx context.Context) (*Ad
 			status.LatestDetectedAt = &detectedAt
 		}
 	}
-	switch {
-	case len(pending) == 0:
-		status.DisabledReason = "no_early_7d_reset"
-	case len(active) == 0:
+	if len(active) == 0 {
 		status.DisabledReason = "no_active_subscriptions"
-	default:
+	} else {
 		status.Enabled = true
 	}
 	return status, nil
@@ -142,9 +139,6 @@ func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminRes
 		if txErr != nil {
 			return txErr
 		}
-		if len(pending) == 0 {
-			return ErrOfficialEarlyResetRequired
-		}
 		active, txErr = lister.ListAllActiveForQuotaReset(txCtx, now)
 		if txErr != nil {
 			return txErr
@@ -163,6 +157,9 @@ func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminRes
 		accountIDs := make([]int64, 0, len(pending))
 		for i := range pending {
 			accountIDs = append(accountIDs, pending[i].AccountID)
+		}
+		if len(accountIDs) == 0 {
+			return nil
 		}
 		return tracker.MarkOpenAIOfficial7dResetsHandled(txCtx, accountIDs, now)
 	})

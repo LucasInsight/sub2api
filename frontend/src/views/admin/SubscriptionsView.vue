@@ -165,7 +165,7 @@
               class="btn btn-secondary text-orange-600 disabled:text-gray-400 dark:text-orange-400 dark:disabled:text-gray-500"
               :disabled="!canResetAllQuota"
               :title="resetAllQuotaButtonTitle"
-              @click="showResetAllQuotaConfirm = true"
+              @click="openResetAllQuotaConfirm"
             >
               <Icon name="refresh" size="md" class="mr-2" />
               {{ t('admin.subscriptions.resetAllQuota') }}
@@ -746,9 +746,20 @@
       :confirm-text="t('admin.subscriptions.resetAllQuota')"
       :cancel-text="t('common.cancel')"
       :danger="true"
+      :confirm-disabled="!resetAllQuotaAcknowledged || resettingAllQuota"
       @confirm="confirmResetAllQuota"
-      @cancel="showResetAllQuotaConfirm = false"
-    />
+      @cancel="closeResetAllQuotaConfirm"
+    >
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input
+          v-model="resetAllQuotaAcknowledged"
+          data-testid="reset-all-quota-acknowledgement"
+          type="checkbox"
+          class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
+        />
+        <span>{{ t('admin.subscriptions.resetAllQuotaAcknowledgement') }}</span>
+      </label>
+    </ConfirmDialog>
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
@@ -1039,6 +1050,7 @@ const showRevokeDialog = ref(false)
 const showRestoreDialog = ref(false)
 const showResetQuotaConfirm = ref(false)
 const showResetAllQuotaConfirm = ref(false)
+const resetAllQuotaAcknowledged = ref(false)
 const submitting = ref(false)
 const resettingSubscription = ref<UserSubscription | null>(null)
 const resettingQuota = ref(false)
@@ -1459,9 +1471,19 @@ const createResetAllQuotaIdempotencyKey = (): string => {
   return `subscription-reset-all-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-const confirmResetAllQuota = async () => {
+const openResetAllQuotaConfirm = () => {
+  resetAllQuotaAcknowledged.value = false
+  showResetAllQuotaConfirm.value = true
+}
+
+const closeResetAllQuotaConfirm = () => {
   showResetAllQuotaConfirm.value = false
-  if (!canResetAllQuota.value || resettingAllQuota.value) return
+  resetAllQuotaAcknowledged.value = false
+}
+
+const confirmResetAllQuota = async () => {
+  if (!canResetAllQuota.value || resettingAllQuota.value || !resetAllQuotaAcknowledged.value) return
+  closeResetAllQuotaConfirm()
   resettingAllQuota.value = true
   try {
     const result = await adminAPI.subscriptions.resetAllQuota(createResetAllQuotaIdempotencyKey())

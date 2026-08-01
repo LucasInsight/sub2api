@@ -93,15 +93,18 @@ func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
 	require.Equal(t, []int64{7}, tracker.handledIDs)
 }
 
-func TestAdminResetAllQuota_RequiresPendingOfficialReset(t *testing.T) {
+func TestAdminResetAllQuota_AllowsResetWithoutPendingOfficialReset(t *testing.T) {
 	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
 	tracker := &official7dResetRepoStub{}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
-	_, err := svc.AdminResetAllQuota(context.Background())
+	result, err := svc.AdminResetAllQuota(context.Background())
 
-	require.ErrorIs(t, err, ErrOfficialEarlyResetRequired)
-	require.Empty(t, subRepo.fiveHourIDs)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.ResetCount)
+	require.Zero(t, result.ConsumedEventCount)
+	require.Equal(t, []int64{11}, subRepo.fiveHourIDs)
+	require.Equal(t, []int64{11}, subRepo.usageWindowIDs)
 	require.False(t, tracker.markHandled)
 }
 
@@ -119,17 +122,18 @@ func TestAdminResetAllQuota_DoesNotConsumeEventWhenResetFails(t *testing.T) {
 	require.False(t, tracker.markHandled)
 }
 
-func TestAdminResetAllQuotaStatus_DisablesWithoutEventOrSubscription(t *testing.T) {
-	subRepo := &resetAllQuotaUserSubRepoStub{}
+func TestAdminResetAllQuotaStatus_DependsOnlyOnActiveSubscriptions(t *testing.T) {
+	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
 	tracker := &official7dResetRepoStub{}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
 	status, err := svc.AdminResetAllQuotaStatus(context.Background())
 	require.NoError(t, err)
-	require.False(t, status.Enabled)
-	require.Equal(t, "no_early_7d_reset", status.DisabledReason)
+	require.True(t, status.Enabled)
+	require.Empty(t, status.DisabledReason)
+	require.Zero(t, status.PendingEventCount)
 
-	tracker.pending = []OpenAIOfficial7dResetState{{AccountID: 7, DetectedAt: time.Now()}}
+	subRepo.active = nil
 	status, err = svc.AdminResetAllQuotaStatus(context.Background())
 	require.NoError(t, err)
 	require.False(t, status.Enabled)

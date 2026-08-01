@@ -250,8 +250,8 @@ func (h *SubscriptionHandler) ResetQuota(c *gin.Context) {
 	response.Success(c, dto.UserSubscriptionFromServiceAdmin(sub))
 }
 
-// ResetAllQuotaStatus reports whether an unhandled OpenAI 7-day early reset
-// currently permits the global subscription reset action.
+// ResetAllQuotaStatus reports whether active subscriptions are available for
+// the global quota reset action. Pending upstream events are informational.
 // GET /api/v1/admin/subscriptions/reset-all-quota/status
 func (h *SubscriptionHandler) ResetAllQuotaStatus(c *gin.Context) {
 	status, err := h.subscriptionService.AdminResetAllQuotaStatus(c.Request.Context())
@@ -263,7 +263,7 @@ func (h *SubscriptionHandler) ResetAllQuotaStatus(c *gin.Context) {
 }
 
 // ResetAllQuota resets every active, unexpired user subscription and consumes
-// all pending OpenAI 7-day early-reset events atomically.
+// any pending OpenAI 7-day early-reset events atomically.
 // POST /api/v1/admin/subscriptions/reset-all-quota
 func (h *SubscriptionHandler) ResetAllQuota(c *gin.Context) {
 	executeAdminIdempotentJSON(
