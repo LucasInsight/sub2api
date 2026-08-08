@@ -44,12 +44,12 @@ func (r *resetAllQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, id i
 
 type official7dResetRepoStub struct {
 	pending     []OpenAIOfficial7dResetState
-	handledIDs  []int64
+	candidates  []OpenAIOfficial7dResetCandidate
 	handledAt   time.Time
 	markHandled bool
 }
 
-func (r *official7dResetRepoStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration) (bool, error) {
+func (r *official7dResetRepoStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration) (OpenAIOfficial7dResetObservation, error) {
 	panic("unexpected ObserveOpenAI7dReset call")
 }
 
@@ -57,17 +57,19 @@ func (r *official7dResetRepoStub) ListPendingOpenAIOfficial7dResets(context.Cont
 	return append([]OpenAIOfficial7dResetState(nil), r.pending...), nil
 }
 
-func (r *official7dResetRepoStub) MarkOpenAIOfficial7dResetsHandled(_ context.Context, ids []int64, handledAt time.Time) error {
+func (r *official7dResetRepoStub) ListEligibleOpenAIOfficial7dResetCandidates(context.Context, time.Time) ([]OpenAIOfficial7dResetCandidate, error) {
+	return append([]OpenAIOfficial7dResetCandidate(nil), r.candidates...), nil
+}
+
+func (r *official7dResetRepoStub) MarkAllOpenAIOfficial7dResetsHandled(_ context.Context, handledAt time.Time) error {
 	r.markHandled = true
-	r.handledIDs = append([]int64(nil), ids...)
 	r.handledAt = handledAt
 	return nil
 }
 
-func newResetAllQuotaService(subRepo *resetAllQuotaUserSubRepoStub, tracker *official7dResetRepoStub) *SubscriptionService {
-	svc := NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil)
-	svc.official7dResetRepo = tracker
-	return svc
+func newResetAllQuotaService(subRepo *resetAllQuotaUserSubRepoStub, tracker *official7dResetRepoStub) *SubscriptionQuotaResetService {
+	subscriptionService := NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil)
+	return NewSubscriptionQuotaResetService(subscriptionService, tracker, nil)
 }
 
 func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
@@ -78,7 +80,7 @@ func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
 	tracker := &official7dResetRepoStub{pending: []OpenAIOfficial7dResetState{{AccountID: 7, DetectedAt: time.Now()}}}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
-	result, err := svc.AdminResetAllQuota(context.Background())
+	result, err := svc.AdminResetAllQuota(context.Background(), true)
 
 	require.NoError(t, err)
 	require.Equal(t, 2, result.ResetCount)
@@ -90,7 +92,6 @@ func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
 	require.Equal(t, subRepo.calendarStarts[0], subRepo.calendarStarts[1])
 	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.calendarStarts[0])
 	require.True(t, tracker.markHandled)
-	require.Equal(t, []int64{7}, tracker.handledIDs)
 }
 
 func TestAdminResetAllQuota_AllowsResetWithoutPendingOfficialReset(t *testing.T) {
@@ -98,14 +99,14 @@ func TestAdminResetAllQuota_AllowsResetWithoutPendingOfficialReset(t *testing.T)
 	tracker := &official7dResetRepoStub{}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
-	result, err := svc.AdminResetAllQuota(context.Background())
+	result, err := svc.AdminResetAllQuota(context.Background(), true)
 
 	require.NoError(t, err)
 	require.Equal(t, 1, result.ResetCount)
 	require.Zero(t, result.ConsumedEventCount)
 	require.Equal(t, []int64{11}, subRepo.fiveHourIDs)
 	require.Equal(t, []int64{11}, subRepo.usageWindowIDs)
-	require.False(t, tracker.markHandled)
+	require.True(t, tracker.markHandled)
 }
 
 func TestAdminResetAllQuota_DoesNotConsumeEventWhenResetFails(t *testing.T) {
@@ -116,26 +117,83 @@ func TestAdminResetAllQuota_DoesNotConsumeEventWhenResetFails(t *testing.T) {
 	tracker := &official7dResetRepoStub{pending: []OpenAIOfficial7dResetState{{AccountID: 7, DetectedAt: time.Now()}}}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
-	_, err := svc.AdminResetAllQuota(context.Background())
+	_, err := svc.AdminResetAllQuota(context.Background(), true)
 
 	require.EqualError(t, err, "reset failed")
 	require.False(t, tracker.markHandled)
 }
 
-func TestAdminResetAllQuotaStatus_DependsOnlyOnActiveSubscriptions(t *testing.T) {
+func TestAdminResetAllQuota_RequiresServerAcknowledgement(t *testing.T) {
 	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
 	tracker := &official7dResetRepoStub{}
 	svc := newResetAllQuotaService(subRepo, tracker)
 
-	status, err := svc.AdminResetAllQuotaStatus(context.Background())
+	_, err := svc.AdminResetAllQuota(context.Background(), false)
+
+	require.ErrorIs(t, err, ErrResetAllQuotaAckRequired)
+	require.Empty(t, subRepo.fiveHourIDs)
+	require.False(t, tracker.markHandled)
+}
+
+func TestAdminResetAllQuotaStatus_DependsOnlyOnActiveSubscriptions(t *testing.T) {
+	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
+	detectedAt := time.Now()
+	tracker := &official7dResetRepoStub{
+		pending: []OpenAIOfficial7dResetState{{AccountID: 1, DetectedAt: detectedAt}},
+		candidates: []OpenAIOfficial7dResetCandidate{
+			{AccountID: 1, Pending: true, DetectedAt: &detectedAt},
+			{AccountID: 2},
+		},
+	}
+	svc := newResetAllQuotaService(subRepo, tracker)
+
+	status, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	require.True(t, status.Enabled)
 	require.Empty(t, status.DisabledReason)
-	require.Zero(t, status.PendingEventCount)
+	require.Equal(t, 1, status.PendingEventCount)
+	require.Equal(t, 2, status.EligibleAccountCount)
+	require.Equal(t, 1, status.ConfirmationCount)
+	require.Equal(t, 2, status.RequiredConfirmationCount)
+	require.False(t, status.AutomaticResetReady)
 
 	subRepo.active = nil
-	status, err = svc.AdminResetAllQuotaStatus(context.Background())
+	status, err = svc.Status(context.Background())
 	require.NoError(t, err)
 	require.False(t, status.Enabled)
 	require.Equal(t, "no_active_subscriptions", status.DisabledReason)
+}
+
+func TestAutomaticResetAllQuota_IsDisabledByMasterSwitch(t *testing.T) {
+	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
+	tracker := &official7dResetRepoStub{}
+	settings := NewSettingService(&panelRateLimitSettingRepo{values: map[string]string{}}, nil)
+	svc := NewSubscriptionQuotaResetService(
+		NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil),
+		tracker,
+		settings,
+	)
+
+	_, err := svc.AutomaticResetAllQuota(context.Background(), []int64{1})
+
+	require.ErrorIs(t, err, ErrQuotaResetAutomationDisabled)
+	require.Empty(t, subRepo.fiveHourIDs)
+}
+
+func TestAutomaticResetAllQuota_NotifyOnlyNeverResets(t *testing.T) {
+	subRepo := &resetAllQuotaUserSubRepoStub{active: []UserSubscription{{ID: 11}}}
+	tracker := &official7dResetRepoStub{}
+	settingsRepo := &panelRateLimitSettingRepo{values: map[string]string{
+		SettingKeyOpenAIOfficialQuotaAutoResetEnabled: "true",
+	}}
+	svc := NewSubscriptionQuotaResetService(
+		NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil),
+		tracker,
+		NewSettingService(settingsRepo, nil),
+	)
+
+	_, err := svc.AutomaticResetAllQuota(context.Background(), []int64{1})
+
+	require.ErrorIs(t, err, ErrQuotaResetAutomationNotifyOnly)
+	require.Empty(t, subRepo.fiveHourIDs)
 }

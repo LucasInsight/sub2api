@@ -114,13 +114,13 @@ type OpenAIQuotaResetResult struct {
 // for OpenAI OAuth accounts. It reuses the privacy client factory so all calls
 // flow through the impersonated HTTP client (Cloudflare-friendly TLS fingerprint).
 type OpenAIQuotaService struct {
-	accountRepo          AccountRepository
-	proxyRepo            ProxyRepository
-	tokenProvider        *OpenAITokenProvider
-	privacyClientFactory PrivacyClientFactory
-	official7dResetRepo  OpenAIOfficial7dResetRepository
-	agentIdentityTaskMu  sync.Mutex
-	agentIdentityWS      agentIdentityWSConnectionInvalidator
+	accountRepo             AccountRepository
+	proxyRepo               ProxyRepository
+	tokenProvider           *OpenAITokenProvider
+	privacyClientFactory    PrivacyClientFactory
+	official7dResetObserver *OpenAIOfficial7dResetObserver
+	agentIdentityTaskMu     sync.Mutex
+	agentIdentityWS         agentIdentityWSConnectionInvalidator
 }
 
 // NewOpenAIQuotaService constructs a quota service. token provider is required —
@@ -139,7 +139,7 @@ func NewOpenAIQuotaService(
 		privacyClientFactory: privacyClientFactory,
 	}
 	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
-		service.official7dResetRepo = tracker
+		service.official7dResetObserver = NewOpenAIOfficial7dResetObserver(tracker, nil)
 	}
 	return service
 }
@@ -148,6 +148,16 @@ func NewOpenAIQuotaService(
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	return s.queryUsage(ctx, accountID, true)
+}
+
+// QueryUsageSnapshot fetches only the authoritative quota windows. Periodic
+// reset detection does not need the separate reset-credit details request.
+func (s *OpenAIQuotaService) QueryUsageSnapshot(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	return s.queryUsage(ctx, accountID, false)
+}
+
+func (s *OpenAIQuotaService) queryUsage(ctx context.Context, accountID int64, includeResetCreditDetails bool) (*OpenAIQuotaUsage, error) {
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -193,7 +203,14 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 	}
 
 	payload.FetchedAt = time.Now().Unix()
-	s.observeOfficial7dReset(ctx, accountID, &payload)
+	observationSource := OpenAIOfficial7dResetSourceQuotaAPI
+	if !includeResetCreditDetails {
+		observationSource = OpenAIOfficial7dResetSourcePeriodicProbe
+	}
+	s.observeOfficial7dReset(ctx, accountID, &payload, observationSource)
+	if !includeResetCreditDetails {
+		return &payload, nil
+	}
 	details := s.queryResetCreditDetails(callCtx, client, accessToken, chatGPTAccountID, fedRAMP, accountID)
 	if details != nil {
 		hasDetailCount := details.AvailableCount != nil
@@ -326,8 +343,13 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 	return &payload, nil
 }
 
-func (s *OpenAIQuotaService) observeOfficial7dReset(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage) {
-	if s == nil || s.official7dResetRepo == nil || usage == nil {
+func (s *OpenAIQuotaService) observeOfficial7dReset(
+	ctx context.Context,
+	accountID int64,
+	usage *OpenAIQuotaUsage,
+	source OpenAIOfficial7dResetObservationSource,
+) {
+	if s == nil || s.official7dResetObserver == nil || usage == nil {
 		return
 	}
 	resetAt := openAIQuota7dResetAt(usage.RateLimit)
@@ -335,7 +357,7 @@ func (s *OpenAIQuotaService) observeOfficial7dReset(ctx context.Context, account
 		return
 	}
 	observedAt := time.Unix(usage.FetchedAt, 0).UTC()
-	detected, err := s.official7dResetRepo.ObserveOpenAI7dReset(ctx, accountID, observedAt, *resetAt, openaiOfficialResetGrace)
+	detected, err := observeOpenAIOfficial7dReset(ctx, s.official7dResetObserver, accountID, observedAt, *resetAt, source)
 	if err != nil {
 		slog.Warn("openai_official_7d_reset_observation_failed", "account_id", accountID, "error", err)
 		return

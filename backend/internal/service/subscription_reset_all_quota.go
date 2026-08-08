@@ -4,7 +4,53 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
+
+var (
+	ErrResetAllQuotaUnavailable       = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
+	ErrResetAllQuotaAckRequired       = infraerrors.BadRequest("RESET_ALL_QUOTA_ACKNOWLEDGEMENT_REQUIRED", "reset-all quota acknowledgement is required")
+	ErrQuotaResetAutomationDisabled   = infraerrors.Conflict("QUOTA_RESET_AUTOMATION_DISABLED", "quota reset automation is disabled")
+	ErrQuotaResetAutomationNotifyOnly = infraerrors.Conflict("QUOTA_RESET_AUTOMATION_NOTIFY_ONLY", "quota reset automation is currently notify-only")
+	ErrAutomaticQuotaResetPending     = infraerrors.Conflict("AUTOMATIC_QUOTA_RESET_NOT_CONFIRMED", "automatic quota reset does not have enough account confirmations")
+)
+
+type quotaResetAutomationMode string
+
+const (
+	quotaResetAutomationModeNotifyOnly quotaResetAutomationMode = "notify_only"
+	quotaResetAutomationModeExecute    quotaResetAutomationMode = "execute"
+
+	currentQuotaResetAutomationMode = quotaResetAutomationModeNotifyOnly
+)
+
+type SubscriptionQuotaResetService struct {
+	subscriptionService *SubscriptionService
+	tracker             OpenAIOfficial7dResetRepository
+	settings            OpenAIQuotaResetAutomationSettings
+}
+
+func ProvideSubscriptionQuotaResetService(
+	subscriptionService *SubscriptionService,
+	accountRepo AccountRepository,
+	settingService *SettingService,
+) *SubscriptionQuotaResetService {
+	tracker, _ := accountRepo.(OpenAIOfficial7dResetRepository)
+	return NewSubscriptionQuotaResetService(subscriptionService, tracker, settingService)
+}
+
+func NewSubscriptionQuotaResetService(
+	subscriptionService *SubscriptionService,
+	tracker OpenAIOfficial7dResetRepository,
+	settings OpenAIQuotaResetAutomationSettings,
+) *SubscriptionQuotaResetService {
+	return &SubscriptionQuotaResetService{
+		subscriptionService: subscriptionService,
+		tracker:             tracker,
+		settings:            settings,
+	}
+}
 
 type subscriptionQuotaResetWindows struct {
 	fiveHour bool
@@ -23,23 +69,17 @@ func (s *SubscriptionService) resetSubscriptionQuotaWindows(
 	windows subscriptionQuotaResetWindows,
 	now time.Time,
 ) error {
-	if sub == nil || !windows.any() {
+	if s == nil || sub == nil || !windows.any() {
 		return ErrInvalidInput
 	}
+	repo := s.userSubRepo
 	if windows.fiveHour {
-		if err := s.userSubRepo.ResetFiveHourUsage(ctx, sub.ID, now); err != nil {
+		if err := repo.ResetFiveHourUsage(ctx, sub.ID, now); err != nil {
 			return err
 		}
 	}
 	if windows.daily || windows.weekly || windows.monthly {
-		if err := s.userSubRepo.ResetUsageWindows(
-			ctx,
-			sub.ID,
-			windows.daily,
-			windows.weekly,
-			windows.monthly,
-			now,
-		); err != nil {
+		if err := repo.ResetUsageWindows(ctx, sub.ID, windows.daily, windows.weekly, windows.monthly, now); err != nil {
 			return err
 		}
 	}
@@ -52,7 +92,7 @@ type subscriptionQuotaResetCacheTarget struct {
 }
 
 func (s *SubscriptionService) invalidateQuotaResetCaches(targets []subscriptionQuotaResetCacheTarget) {
-	if len(targets) == 0 {
+	if s == nil || len(targets) == 0 {
 		return
 	}
 	if s.subCacheL1 != nil {
@@ -79,19 +119,26 @@ func (s *SubscriptionService) invalidateQuotaResetCaches(targets []subscriptionQ
 }
 
 type AdminResetAllQuotaStatus struct {
-	Enabled                 bool       `json:"enabled"`
-	PendingEventCount       int        `json:"pending_event_count"`
-	ActiveSubscriptionCount int        `json:"active_subscription_count"`
-	LatestDetectedAt        *time.Time `json:"latest_detected_at,omitempty"`
-	DisabledReason          string     `json:"disabled_reason,omitempty"`
+	Enabled                   bool       `json:"enabled"`
+	AutoResetEnabled          bool       `json:"auto_reset_enabled"`
+	PendingEventCount         int        `json:"pending_event_count"`
+	ActiveSubscriptionCount   int        `json:"active_subscription_count"`
+	EligibleAccountCount      int        `json:"eligible_account_count"`
+	ConfirmationCount         int        `json:"confirmation_count"`
+	RequiredConfirmationCount int        `json:"required_confirmation_count"`
+	AutomaticResetReady       bool       `json:"automatic_reset_ready"`
+	LatestDetectedAt          *time.Time `json:"latest_detected_at,omitempty"`
+	LastHandledAt             *time.Time `json:"last_handled_at,omitempty"`
+	DisabledReason            string     `json:"disabled_reason,omitempty"`
 }
 
 type AdminResetAllQuotaResult struct {
 	ResetCount         int `json:"reset_count"`
 	ConsumedEventCount int `json:"consumed_event_count"`
+	ConfirmationCount  int `json:"confirmation_count"`
 }
 
-func (s *SubscriptionService) AdminResetAllQuotaStatus(ctx context.Context) (*AdminResetAllQuotaStatus, error) {
+func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminResetAllQuotaStatus, error) {
 	lister, tracker, err := s.resetAllQuotaDependencies()
 	if err != nil {
 		return nil, err
@@ -105,10 +152,21 @@ func (s *SubscriptionService) AdminResetAllQuotaStatus(ctx context.Context) (*Ad
 	if err != nil {
 		return nil, err
 	}
+	candidates, err := tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	autoResetEnabled, err := s.AutomationEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	status := &AdminResetAllQuotaStatus{
-		PendingEventCount:       len(pending),
-		ActiveSubscriptionCount: len(active),
+		AutoResetEnabled:          autoResetEnabled,
+		PendingEventCount:         len(pending),
+		ActiveSubscriptionCount:   len(active),
+		EligibleAccountCount:      len(candidates),
+		RequiredConfirmationCount: automaticQuotaResetConfirmationRequirement(len(candidates)),
 	}
 	for i := range pending {
 		if status.LatestDetectedAt == nil || pending[i].DetectedAt.After(*status.LatestDetectedAt) {
@@ -116,6 +174,17 @@ func (s *SubscriptionService) AdminResetAllQuotaStatus(ctx context.Context) (*Ad
 			status.LatestDetectedAt = &detectedAt
 		}
 	}
+	for i := range candidates {
+		candidate := candidates[i]
+		if candidate.Pending {
+			status.ConfirmationCount++
+		}
+		if candidate.HandledAt != nil && (status.LastHandledAt == nil || candidate.HandledAt.After(*status.LastHandledAt)) {
+			handledAt := *candidate.HandledAt
+			status.LastHandledAt = &handledAt
+		}
+	}
+	status.AutomaticResetReady = status.RequiredConfirmationCount > 0 && status.ConfirmationCount >= status.RequiredConfirmationCount
 	if len(active) == 0 {
 		status.DisabledReason = "no_active_subscriptions"
 	} else {
@@ -124,7 +193,57 @@ func (s *SubscriptionService) AdminResetAllQuotaStatus(ctx context.Context) (*Ad
 	return status, nil
 }
 
-func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminResetAllQuotaResult, error) {
+func automaticQuotaResetConfirmationRequirement(eligibleAccountCount int) int {
+	switch {
+	case eligibleAccountCount <= 0:
+		return 0
+	case eligibleAccountCount == 1:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func (s *SubscriptionQuotaResetService) AutomationEnabled(ctx context.Context) (bool, error) {
+	if s == nil || s.settings == nil {
+		return false, nil
+	}
+	return s.settings.GetOpenAIOfficialQuotaAutoResetEnabled(ctx)
+}
+
+func (s *SubscriptionQuotaResetService) SetAutomationEnabled(ctx context.Context, enabled bool) error {
+	if s == nil || s.settings == nil {
+		return ErrResetAllQuotaUnavailable
+	}
+	return s.settings.SetOpenAIOfficialQuotaAutoResetEnabled(ctx, enabled)
+}
+
+func (s *SubscriptionQuotaResetService) AdminResetAllQuota(ctx context.Context, acknowledged bool) (*AdminResetAllQuotaResult, error) {
+	if !acknowledged {
+		return nil, ErrResetAllQuotaAckRequired
+	}
+	return s.resetAllSubscriptionQuotas(ctx, nil, false)
+}
+
+func (s *SubscriptionQuotaResetService) AutomaticResetAllQuota(ctx context.Context, confirmedAccountIDs []int64) (*AdminResetAllQuotaResult, error) {
+	enabled, err := s.AutomationEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, ErrQuotaResetAutomationDisabled
+	}
+	if currentQuotaResetAutomationMode != quotaResetAutomationModeExecute {
+		return nil, ErrQuotaResetAutomationNotifyOnly
+	}
+	return s.resetAllSubscriptionQuotas(ctx, confirmedAccountIDs, true)
+}
+
+func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
+	ctx context.Context,
+	confirmedAccountIDs []int64,
+	requireAutomaticConfirmation bool,
+) (*AdminResetAllQuotaResult, error) {
 	lister, tracker, err := s.resetAllQuotaDependencies()
 	if err != nil {
 		return nil, err
@@ -132,12 +251,35 @@ func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminRes
 	now := time.Now()
 	var active []UserSubscription
 	var pending []OpenAIOfficial7dResetState
+	confirmationCount := 0
 
-	err = s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+	err = s.subscriptionService.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
 		var txErr error
 		pending, txErr = tracker.ListPendingOpenAIOfficial7dResets(txCtx)
 		if txErr != nil {
 			return txErr
+		}
+		if requireAutomaticConfirmation {
+			candidates, candidateErr := tracker.ListEligibleOpenAIOfficial7dResetCandidates(txCtx, now)
+			if candidateErr != nil {
+				return candidateErr
+			}
+			confirmedSet := make(map[int64]struct{}, len(confirmedAccountIDs))
+			for _, accountID := range confirmedAccountIDs {
+				confirmedSet[accountID] = struct{}{}
+			}
+			for i := range candidates {
+				candidate := candidates[i]
+				if !candidate.Pending {
+					continue
+				}
+				if _, ok := confirmedSet[candidate.AccountID]; ok {
+					confirmationCount++
+				}
+			}
+			if confirmationCount < automaticQuotaResetConfirmationRequirement(len(candidates)) {
+				return ErrAutomaticQuotaResetPending
+			}
 		}
 		active, txErr = lister.ListAllActiveForQuotaReset(txCtx, now)
 		if txErr != nil {
@@ -149,19 +291,12 @@ func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminRes
 
 		windows := subscriptionQuotaResetWindows{fiveHour: true, daily: true, weekly: true, monthly: true}
 		for i := range active {
-			if txErr := s.resetSubscriptionQuotaWindows(txCtx, &active[i], windows, now); txErr != nil {
+			if txErr := s.subscriptionService.resetSubscriptionQuotaWindows(txCtx, &active[i], windows, now); txErr != nil {
 				return txErr
 			}
 		}
 
-		accountIDs := make([]int64, 0, len(pending))
-		for i := range pending {
-			accountIDs = append(accountIDs, pending[i].AccountID)
-		}
-		if len(accountIDs) == 0 {
-			return nil
-		}
-		return tracker.MarkOpenAIOfficial7dResetsHandled(txCtx, accountIDs, now)
+		return tracker.MarkAllOpenAIOfficial7dResetsHandled(txCtx, now)
 	})
 	if err != nil {
 		return nil, err
@@ -171,17 +306,21 @@ func (s *SubscriptionService) AdminResetAllQuota(ctx context.Context) (*AdminRes
 	for i := range active {
 		targets = append(targets, subscriptionQuotaResetCacheTarget{userID: active[i].UserID, groupID: active[i].GroupID})
 	}
-	s.invalidateQuotaResetCaches(targets)
-	return &AdminResetAllQuotaResult{ResetCount: len(active), ConsumedEventCount: len(pending)}, nil
+	s.subscriptionService.invalidateQuotaResetCaches(targets)
+	return &AdminResetAllQuotaResult{
+		ResetCount:         len(active),
+		ConsumedEventCount: len(pending),
+		ConfirmationCount:  confirmationCount,
+	}, nil
 }
 
-func (s *SubscriptionService) resetAllQuotaDependencies() (ActiveUserSubscriptionQuotaResetRepository, OpenAIOfficial7dResetRepository, error) {
-	if s == nil || s.userSubRepo == nil || s.official7dResetRepo == nil {
+func (s *SubscriptionQuotaResetService) resetAllQuotaDependencies() (ActiveUserSubscriptionQuotaResetRepository, OpenAIOfficial7dResetRepository, error) {
+	if s == nil || s.subscriptionService == nil || s.subscriptionService.userSubRepo == nil || s.tracker == nil {
 		return nil, nil, ErrResetAllQuotaUnavailable
 	}
-	lister, ok := s.userSubRepo.(ActiveUserSubscriptionQuotaResetRepository)
+	lister, ok := s.subscriptionService.userSubRepo.(ActiveUserSubscriptionQuotaResetRepository)
 	if !ok {
 		return nil, nil, ErrResetAllQuotaUnavailable
 	}
-	return lister, s.official7dResetRepo, nil
+	return lister, s.tracker, nil
 }

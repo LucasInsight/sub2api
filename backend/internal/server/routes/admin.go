@@ -640,6 +640,7 @@ func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		subscriptions.GET("", h.Admin.Subscription.List)
 		subscriptions.GET("/reset-all-quota/status", h.Admin.Subscription.ResetAllQuotaStatus)
+		subscriptions.PUT("/reset-all-quota/automation", h.Admin.Subscription.UpdateQuotaResetAutomation)
 		subscriptions.POST("/reset-all-quota", h.Admin.Subscription.ResetAllQuota)
 		subscriptions.GET("/:id", h.Admin.Subscription.GetByID)
 		subscriptions.GET("/:id/progress", h.Admin.Subscription.GetProgress)

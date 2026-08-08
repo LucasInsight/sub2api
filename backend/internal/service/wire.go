@@ -133,9 +133,12 @@ func ProvideOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
+	official7dResetObserver *OpenAIOfficial7dResetObserver,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
+	service.official7dResetObserver = official7dResetObserver
+	openAIGatewayService.official7dResetObserver = official7dResetObserver
 	return service
 }
 
@@ -152,6 +155,7 @@ func ProvideAccountUsageService(
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
+	official7dResetObserver *OpenAIOfficial7dResetObserver,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
 		accountRepo,
@@ -167,6 +171,7 @@ func ProvideAccountUsageService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
+	service.official7dResetObserver = official7dResetObserver
 	return service
 }
 
@@ -720,6 +725,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
+	ProvideOpenAIOfficial7dResetObserver,
 	ProvideGrokQuotaService,
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
@@ -745,6 +751,8 @@ var ProviderSet = wire.NewSet(
 	ProvideEmailQueueService,
 	NewTurnstileService,
 	ProvideSubscriptionService,
+	ProvideSubscriptionQuotaResetService,
+	ProvideOpenAIOfficialQuotaResetRunner,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,

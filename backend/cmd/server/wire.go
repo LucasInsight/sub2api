@@ -99,6 +99,7 @@ func provideCleanup(
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	subscriptionService *service.SubscriptionService,
+	officialQuotaReset *service.OpenAIOfficialQuotaResetRunner,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
 	geminiOAuth *service.GeminiOAuthService,
@@ -247,6 +248,12 @@ func provideCleanup(
 			{"SubscriptionService", func() error {
 				if subscriptionService != nil {
 					subscriptionService.Stop()
+				}
+				return nil
+			}},
+			{"OpenAIOfficialQuotaResetRunner", func() error {
+				if officialQuotaReset != nil {
+					officialQuotaReset.Stop()
 				}
 				return nil
 			}},

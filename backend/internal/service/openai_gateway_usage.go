@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -849,6 +850,18 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if observedAt, resetAt, ok := openAIOfficial7dResetTimesFromExtraUpdates(updates, now); ok {
+			if _, err := observeOpenAIOfficial7dReset(
+				updateCtx,
+				s.official7dResetObserver,
+				accountID,
+				observedAt,
+				resetAt,
+				OpenAIOfficial7dResetSourceGatewayHeader,
+			); err != nil {
+				slog.Warn("openai official 7d reset header observation failed", "account_id", accountID, "error", err)
+			}
+		}
 		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
 	}()
 }

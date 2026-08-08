@@ -29,6 +29,11 @@ func toResponsePagination(p *pagination.PaginationResult) *response.PaginationRe
 // SubscriptionHandler handles admin subscription management
 type SubscriptionHandler struct {
 	subscriptionService *service.SubscriptionService
+	quotaResetService   *service.SubscriptionQuotaResetService
+}
+
+func (h *SubscriptionHandler) SetQuotaResetService(quotaResetService *service.SubscriptionQuotaResetService) {
+	h.quotaResetService = quotaResetService
 }
 
 // NewSubscriptionHandler creates a new admin subscription handler
@@ -248,33 +253,6 @@ func (h *SubscriptionHandler) ResetQuota(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.UserSubscriptionFromServiceAdmin(sub))
-}
-
-// ResetAllQuotaStatus reports whether active subscriptions are available for
-// the global quota reset action. Pending upstream events are informational.
-// GET /api/v1/admin/subscriptions/reset-all-quota/status
-func (h *SubscriptionHandler) ResetAllQuotaStatus(c *gin.Context) {
-	status, err := h.subscriptionService.AdminResetAllQuotaStatus(c.Request.Context())
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, status)
-}
-
-// ResetAllQuota resets every active, unexpired user subscription and consumes
-// any pending OpenAI 7-day early-reset events atomically.
-// POST /api/v1/admin/subscriptions/reset-all-quota
-func (h *SubscriptionHandler) ResetAllQuota(c *gin.Context) {
-	executeAdminIdempotentJSON(
-		c,
-		"admin.subscriptions.reset_all_quota",
-		struct{}{},
-		service.DefaultWriteIdempotencyTTL(),
-		func(ctx context.Context) (any, error) {
-			return h.subscriptionService.AdminResetAllQuota(ctx)
-		},
-	)
 }
 
 // Revoke handles revoking a subscription.

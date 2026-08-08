@@ -318,6 +318,7 @@ type AccountUsageService struct {
 	grokQuotaFetcher        *GrokQuotaFetcher
 	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
+	official7dResetObserver *OpenAIOfficial7dResetObserver
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -339,7 +340,7 @@ func NewAccountUsageService(
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
 ) *AccountUsageService {
-	return &AccountUsageService{
+	service := &AccountUsageService{
 		accountRepo:             accountRepo,
 		usageLogRepo:            usageLogRepo,
 		usageFetcher:            usageFetcher,
@@ -352,6 +353,10 @@ func NewAccountUsageService(
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
 	}
+	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
+		service.official7dResetObserver = NewOpenAIOfficial7dResetObserver(tracker, nil)
+	}
+	return service
 }
 
 // GetUsage 获取账号使用量
@@ -860,6 +865,18 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 	go func() {
 		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer updateCancel()
+		if observedAt, resetAt, ok := openAIOfficial7dResetTimesFromExtraUpdates(updates, time.Now()); ok {
+			if _, err := observeOpenAIOfficial7dReset(
+				updateCtx,
+				s.official7dResetObserver,
+				accountID,
+				observedAt,
+				resetAt,
+				OpenAIOfficial7dResetSourceAccountProbe,
+			); err != nil {
+				slog.Warn("openai official 7d reset probe observation failed", "account_id", accountID, "error", err)
+			}
+		}
 		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
 	}()
 }

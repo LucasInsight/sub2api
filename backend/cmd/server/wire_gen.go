@@ -190,9 +190,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	antigravityQuotaFetcher := service.NewAntigravityQuotaFetcher(proxyRepository)
 	grokQuotaFetcher := service.NewGrokQuotaFetcher()
 	grokQuotaService := service.ProvideGrokQuotaService(accountRepository, proxyRepository, grokTokenProvider, httpUpstream, configConfig, usageLogRepository)
-	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory, openAIGatewayService)
+	auditLogRepository := repository.NewAuditLogRepository(db)
+	auditLogService := service.ProvideAuditLogService(auditLogRepository, settingService)
+	openAIOfficial7dResetObserver := service.ProvideOpenAIOfficial7dResetObserver(accountRepository, auditLogService)
+	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory, openAIGatewayService, openAIOfficial7dResetObserver)
 	usageCache := service.NewUsageCache()
-	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, grokQuotaService, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, openAIGatewayService)
+	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, grokQuotaService, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, openAIGatewayService, openAIOfficial7dResetObserver)
 	accountTestService := service.ProvideAccountTestService(accountRepository, geminiTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, openAIGatewayService)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	accountHandler := admin.ProvideAccountHandler(adminService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, rateLimitService, accountUsageService, accountTestService, concurrencyService, crsSyncService, sessionLimitCache, rpmCache, compositeTokenCacheInvalidator, grokQuotaService)
@@ -231,7 +234,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	idempotencyRepository := repository.NewIdempotencyRepository(client, db)
 	systemOperationLockService := service.ProvideSystemOperationLockService(idempotencyRepository, configConfig)
 	systemHandler := handler.ProvideSystemHandler(updateService, systemOperationLockService)
-	adminSubscriptionHandler := admin.NewSubscriptionHandler(subscriptionService)
+	subscriptionQuotaResetService := service.ProvideSubscriptionQuotaResetService(subscriptionService, accountRepository, settingService)
+	adminSubscriptionHandler := handler.ProvideAdminSubscriptionHandler(subscriptionService, subscriptionQuotaResetService)
 	usageCleanupRepository := repository.NewUsageCleanupRepository(client, db)
 	usageCleanupService := service.ProvideUsageCleanupService(usageCleanupRepository, timingWheelService, dashboardAggregationService, configConfig)
 	adminUsageHandler := admin.NewUsageHandler(usageService, apiKeyService, adminService, usageCleanupService)
@@ -265,8 +269,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentHandler := admin.NewPaymentHandler(paymentService, paymentConfigService)
 	affiliateHandler := admin.NewAffiliateHandler(affiliateService, adminService)
 	complianceHandler := admin.NewComplianceHandler(settingService)
-	auditLogRepository := repository.NewAuditLogRepository(db)
-	auditLogService := service.ProvideAuditLogService(auditLogRepository, settingService)
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	ollamaCloudUsageService := service.ProvideOllamaCloudUsageService(accountRepository, httpUpstream, settingService, secretEncryptor, configConfig, leaderLockCache, db)
@@ -323,11 +325,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	proxyExpiryService := service.ProvideProxyExpiryService(proxyRepository)
 	subscriptionExpiryService := service.ProvideSubscriptionExpiryService(userSubscriptionRepository, settingRepository, notificationEmailService, leaderLockCache, db)
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
+	openAIOfficialQuotaResetRunner := service.ProvideOpenAIOfficialQuotaResetRunner(accountRepository, openAIQuotaService, subscriptionQuotaResetService, leaderLockCache, db)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, promptService)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, openAIOfficialQuotaResetRunner, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, promptService)
 	application := &Application{
 		Server:      httpServer,
 		PromptAudit: promptService,
@@ -382,6 +385,7 @@ func provideCleanup(
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	subscriptionService *service.SubscriptionService,
+	officialQuotaReset *service.OpenAIOfficialQuotaResetRunner,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
 	geminiOAuth *service.GeminiOAuthService,
@@ -529,6 +533,12 @@ func provideCleanup(
 			{"SubscriptionService", func() error {
 				if subscriptionService != nil {
 					subscriptionService.Stop()
+				}
+				return nil
+			}},
+			{"OpenAIOfficialQuotaResetRunner", func() error {
+				if officialQuotaReset != nil {
+					officialQuotaReset.Stop()
 				}
 				return nil
 			}},

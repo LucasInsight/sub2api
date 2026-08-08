@@ -47,9 +47,6 @@ func ProvideSubscriptionService(
 	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
 	svc.apiKeyRepo = apiKeyRepo
 	svc.authCacheInvalidator = authCacheInvalidator
-	if tracker, ok := accountRepo.(OpenAIOfficial7dResetRepository); ok {
-		svc.official7dResetRepo = tracker
-	}
 	if source, ok := accountRepo.(OpenAIQuotaEstimateSource); ok {
 		svc.openAIQuotaEstimateSource = source
 	}

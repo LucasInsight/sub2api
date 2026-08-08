@@ -148,37 +148,6 @@ export async function resetQuota(
   return data
 }
 
-export interface ResetAllQuotaStatus {
-  enabled: boolean
-  pending_event_count: number
-  active_subscription_count: number
-  latest_detected_at?: string
-  disabled_reason?: 'no_early_7d_reset' | 'no_active_subscriptions'
-}
-
-export interface ResetAllQuotaResult {
-  reset_count: number
-  consumed_event_count: number
-}
-
-/** Get eligibility for resetting every active subscription quota. */
-export async function getResetAllQuotaStatus(): Promise<ResetAllQuotaStatus> {
-  const { data } = await apiClient.get<ResetAllQuotaStatus>(
-    '/admin/subscriptions/reset-all-quota/status'
-  )
-  return data
-}
-
-/** Reset every active subscription quota. */
-export async function resetAllQuota(idempotencyKey: string): Promise<ResetAllQuotaResult> {
-  const { data } = await apiClient.post<ResetAllQuotaResult>(
-    '/admin/subscriptions/reset-all-quota',
-    {},
-    { headers: { 'Idempotency-Key': idempotencyKey } }
-  )
-  return data
-}
-
 /**
  * List subscriptions by group
  * @param groupId - Group ID
@@ -231,8 +200,6 @@ export const subscriptionsAPI = {
   revoke,
   restore,
   resetQuota,
-  getResetAllQuotaStatus,
-  resetAllQuota,
   listByGroup,
   listByUser
 }

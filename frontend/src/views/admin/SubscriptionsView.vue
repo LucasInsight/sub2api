@@ -159,23 +159,13 @@
             >
               <Icon name="questionCircle" size="md" />
             </button>
-            <button
-              type="button"
-              data-testid="reset-all-quota-button"
-              class="btn btn-secondary text-orange-600 disabled:text-gray-400 dark:text-orange-400 dark:disabled:text-gray-500"
-              :disabled="!canResetAllQuota"
-              :title="resetAllQuotaButtonTitle"
-              @click="openResetAllQuotaConfirm"
-            >
-              <Icon name="refresh" size="md" class="mr-2" />
-              {{ t('admin.subscriptions.resetAllQuota') }}
-            </button>
             <button @click="showAssignModal = true" class="btn btn-primary">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.subscriptions.assignSubscription') }}
             </button>
           </div>
         </div>
+        <SubscriptionQuotaResetControls @reset-completed="loadSubscriptions" />
       </template>
 
       <!-- Subscriptions Table -->
@@ -744,27 +734,6 @@
       @confirm="confirmResetQuota"
       @cancel="showResetQuotaConfirm = false"
     />
-    <ConfirmDialog
-      :show="showResetAllQuotaConfirm"
-      :title="t('admin.subscriptions.resetAllQuotaTitle')"
-      :message="t('admin.subscriptions.resetAllQuotaConfirm', { count: resetAllQuotaStatus?.active_subscription_count ?? 0 })"
-      :confirm-text="t('admin.subscriptions.resetAllQuota')"
-      :cancel-text="t('common.cancel')"
-      :danger="true"
-      :confirm-disabled="!resetAllQuotaAcknowledged || resettingAllQuota"
-      @confirm="confirmResetAllQuota"
-      @cancel="closeResetAllQuotaConfirm"
-    >
-      <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input
-          v-model="resetAllQuotaAcknowledged"
-          data-testid="reset-all-quota-acknowledgement"
-          type="checkbox"
-          class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700"
-        />
-        <span>{{ t('admin.subscriptions.resetAllQuotaAcknowledgement') }}</span>
-      </label>
-    </ConfirmDialog>
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
@@ -852,7 +821,6 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { ResetAllQuotaStatus } from '@/api/admin/subscriptions'
 import type { UserSubscription, Group, GroupPlatform, SubscriptionType } from '@/types'
 import type { SimpleUser } from '@/api/admin/usage'
 import type { Column } from '@/components/common/types'
@@ -870,6 +838,7 @@ import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import Icon from '@/components/icons/Icon.vue'
 import SubscriptionUpgradeDialog from '@/components/admin/subscription/SubscriptionUpgradeDialog.vue'
+import SubscriptionQuotaResetControls from '@/components/admin/subscription/SubscriptionQuotaResetControls.vue'
 import {
   getRemainingDurationParts,
   getRemainingExpiryDuration,
@@ -1059,15 +1028,9 @@ const showExtendModal = ref(false)
 const showRevokeDialog = ref(false)
 const showRestoreDialog = ref(false)
 const showResetQuotaConfirm = ref(false)
-const showResetAllQuotaConfirm = ref(false)
-const resetAllQuotaAcknowledged = ref(false)
 const submitting = ref(false)
 const resettingSubscription = ref<UserSubscription | null>(null)
 const resettingQuota = ref(false)
-const resettingAllQuota = ref(false)
-const loadingResetAllQuotaStatus = ref(false)
-const resetAllQuotaStatus = ref<ResetAllQuotaStatus | null>(null)
-const resetAllQuotaStatusFailed = ref(false)
 const extendingSubscription = ref<UserSubscription | null>(null)
 const revokingSubscription = ref<UserSubscription | null>(null)
 const restoringSubscription = ref<UserSubscription | null>(null)
@@ -1096,23 +1059,6 @@ const platformFilterOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' }
 ])
-
-const canResetAllQuota = computed(
-  () => Boolean(resetAllQuotaStatus.value?.enabled) && !loadingResetAllQuotaStatus.value && !resettingAllQuota.value
-)
-
-const resetAllQuotaButtonTitle = computed(() => {
-  if (resettingAllQuota.value) return t('admin.subscriptions.resettingAllQuota')
-  if (loadingResetAllQuotaStatus.value) return t('admin.subscriptions.checkingResetAllQuota')
-  if (resetAllQuotaStatusFailed.value) return t('admin.subscriptions.resetAllQuotaStatusFailed')
-  if (resetAllQuotaStatus.value?.disabled_reason === 'no_active_subscriptions') {
-    return t('admin.subscriptions.resetAllQuotaNoActive')
-  }
-  if (!resetAllQuotaStatus.value?.enabled) return t('admin.subscriptions.resetAllQuotaLocked')
-  return t('admin.subscriptions.resetAllQuotaReady', {
-    count: resetAllQuotaStatus.value.active_subscription_count
-  })
-})
 
 // Group options for assign (only subscription type groups)
 const subscriptionGroupOptions = computed(() =>
@@ -1176,22 +1122,8 @@ const loadSubscriptions = async () => {
   }
 }
 
-const loadResetAllQuotaStatus = async () => {
-  loadingResetAllQuotaStatus.value = true
-  resetAllQuotaStatusFailed.value = false
-  try {
-    resetAllQuotaStatus.value = await adminAPI.subscriptions.getResetAllQuotaStatus()
-  } catch (error) {
-    resetAllQuotaStatus.value = null
-    resetAllQuotaStatusFailed.value = true
-    console.error('Error loading reset-all quota status:', error)
-  } finally {
-    loadingResetAllQuotaStatus.value = false
-  }
-}
-
 const refreshPage = async () => {
-  await Promise.all([loadSubscriptions(), loadResetAllQuotaStatus()])
+  await loadSubscriptions()
 }
 
 const loadGroups = async () => {
@@ -1471,40 +1403,6 @@ const confirmResetQuota = async () => {
     console.error('Error resetting quota:', error)
   } finally {
     resettingQuota.value = false
-  }
-}
-
-const createResetAllQuotaIdempotencyKey = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `subscription-reset-all-${crypto.randomUUID()}`
-  }
-  return `subscription-reset-all-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-const openResetAllQuotaConfirm = () => {
-  resetAllQuotaAcknowledged.value = false
-  showResetAllQuotaConfirm.value = true
-}
-
-const closeResetAllQuotaConfirm = () => {
-  showResetAllQuotaConfirm.value = false
-  resetAllQuotaAcknowledged.value = false
-}
-
-const confirmResetAllQuota = async () => {
-  if (!canResetAllQuota.value || resettingAllQuota.value || !resetAllQuotaAcknowledged.value) return
-  closeResetAllQuotaConfirm()
-  resettingAllQuota.value = true
-  try {
-    const result = await adminAPI.subscriptions.resetAllQuota(createResetAllQuotaIdempotencyKey())
-    appStore.showSuccess(t('admin.subscriptions.resetAllQuotaSuccess', { count: result.reset_count }))
-    await refreshPage()
-  } catch (error: any) {
-    appStore.showError(error?.message || t('admin.subscriptions.failedToResetAllQuota'))
-    console.error('Error resetting all subscription quotas:', error)
-    await loadResetAllQuotaStatus()
-  } finally {
-    resettingAllQuota.value = false
   }
 }
 

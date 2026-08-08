@@ -41,7 +41,6 @@ var (
 	ErrSubscriptionNilInput        = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
 	ErrAdjustWouldExpire           = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
 	ErrNoActiveSubscriptions       = infraerrors.Conflict("NO_ACTIVE_SUBSCRIPTIONS", "no active subscriptions are available to reset")
-	ErrResetAllQuotaUnavailable    = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
 )
 
 // SubscriptionService 订阅服务
@@ -51,7 +50,6 @@ type SubscriptionService struct {
 	apiKeyRepo                APIKeyRepository
 	billingCacheService       *BillingCacheService
 	authCacheInvalidator      APIKeyAuthCacheInvalidator
-	official7dResetRepo       OpenAIOfficial7dResetRepository
 	openAIQuotaEstimateSource OpenAIQuotaEstimateSource
 	entClient                 *dbent.Client
 

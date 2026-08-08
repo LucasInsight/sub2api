@@ -167,6 +167,15 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+func ProvideAdminSubscriptionHandler(
+	subscriptionService *service.SubscriptionService,
+	quotaResetService *service.SubscriptionQuotaResetService,
+) *admin.SubscriptionHandler {
+	h := admin.NewSubscriptionHandler(subscriptionService)
+	h.SetQuotaResetService(quotaResetService)
+	return h
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -258,7 +267,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAdminSettingHandler,
 	admin.NewOpsHandler,
 	ProvideSystemHandler,
-	admin.NewSubscriptionHandler,
+	ProvideAdminSubscriptionHandler,
 	admin.NewUsageHandler,
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,

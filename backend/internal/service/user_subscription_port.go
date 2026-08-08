@@ -52,10 +52,28 @@ type OpenAIOfficial7dResetState struct {
 	DetectedAt time.Time
 }
 
+type OpenAIOfficial7dResetObservation struct {
+	Detected        bool
+	PreviousResetAt *time.Time
+	ResetAt         time.Time
+	ObservedAt      time.Time
+}
+
+// OpenAIOfficial7dResetCandidate is a main OpenAI OAuth account that can be
+// queried to confirm an official 7-day window reset.
+type OpenAIOfficial7dResetCandidate struct {
+	AccountID       int64
+	Pending         bool
+	DetectedAt      *time.Time
+	QuotaObservedAt *time.Time
+	HandledAt       *time.Time
+}
+
 // OpenAIOfficial7dResetRepository persists authoritative 7d window
 // observations and coordinates consumption of pending early-reset events.
 type OpenAIOfficial7dResetRepository interface {
-	ObserveOpenAI7dReset(ctx context.Context, accountID int64, observedAt, resetAt time.Time, boundaryGrace time.Duration) (bool, error)
+	ObserveOpenAI7dReset(ctx context.Context, accountID int64, observedAt, resetAt time.Time, boundaryGrace time.Duration) (OpenAIOfficial7dResetObservation, error)
 	ListPendingOpenAIOfficial7dResets(ctx context.Context) ([]OpenAIOfficial7dResetState, error)
-	MarkOpenAIOfficial7dResetsHandled(ctx context.Context, accountIDs []int64, handledAt time.Time) error
+	ListEligibleOpenAIOfficial7dResetCandidates(ctx context.Context, now time.Time) ([]OpenAIOfficial7dResetCandidate, error)
+	MarkAllOpenAIOfficial7dResetsHandled(ctx context.Context, handledAt time.Time) error
 }
