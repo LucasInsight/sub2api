@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 type subscriptionQuotaResetWindows struct {
@@ -38,6 +40,7 @@ func (s *SubscriptionService) resetSubscriptionQuotaWindows(
 			windows.daily,
 			windows.weekly,
 			windows.monthly,
+			timezone.StartOfDay(now),
 			now,
 		); err != nil {
 			return err
