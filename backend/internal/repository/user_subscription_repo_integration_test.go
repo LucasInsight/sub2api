@@ -453,9 +453,9 @@ func (s *UserSubscriptionRepoSuite) TestActivateWindows() {
 	group := s.mustCreateGroup("g-activate")
 	sub := s.mustCreateSubscription(user.ID, group.ID, nil)
 
-	fiveHourStart := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
-	calendarStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	err := s.repo.ActivateWindows(s.ctx, sub.ID, fiveHourStart, calendarStart)
+	dailyStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	activateAt := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	err := s.repo.ActivateWindows(s.ctx, sub.ID, dailyStart, activateAt)
 	s.Require().NoError(err, "ActivateWindows")
 
 	got, err := s.repo.GetByID(s.ctx, sub.ID)
@@ -464,8 +464,10 @@ func (s *UserSubscriptionRepoSuite) TestActivateWindows() {
 	s.Require().NotNil(got.DailyWindowStart)
 	s.Require().NotNil(got.WeeklyWindowStart)
 	s.Require().NotNil(got.MonthlyWindowStart)
-	s.Require().WithinDuration(fiveHourStart, *got.FiveHourWindowStart, time.Microsecond)
-	s.Require().WithinDuration(calendarStart, *got.DailyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(activateAt, *got.FiveHourWindowStart, time.Microsecond)
+	s.Require().WithinDuration(dailyStart, *got.DailyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(activateAt, *got.WeeklyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(activateAt, *got.MonthlyWindowStart, time.Microsecond)
 }
 
 func (s *UserSubscriptionRepoSuite) TestResetFiveHourUsage() {
@@ -491,11 +493,11 @@ func (s *UserSubscriptionRepoSuite) TestResetFiveHourUsage() {
 func (s *UserSubscriptionRepoSuite) TestActivateFiveHourWindowPreservesCalendarWindowsAndUsage() {
 	user := s.mustCreateUser("activate5h@test.com", service.RoleUser)
 	group := s.mustCreateGroup("g-activate5h")
-	calendarStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	dailyStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	sub := s.mustCreateSubscription(user.ID, group.ID, func(c *dbent.UserSubscriptionCreate) {
-		c.SetDailyWindowStart(calendarStart)
-		c.SetWeeklyWindowStart(calendarStart)
-		c.SetMonthlyWindowStart(calendarStart)
+		c.SetDailyWindowStart(dailyStart)
+		c.SetWeeklyWindowStart(dailyStart)
+		c.SetMonthlyWindowStart(dailyStart)
 		c.SetFiveHourUsageUsd(4.5)
 		c.SetDailyUsageUsd(20.0)
 	})
@@ -511,9 +513,9 @@ func (s *UserSubscriptionRepoSuite) TestActivateFiveHourWindowPreservesCalendarW
 	s.Require().NotNil(got.WeeklyWindowStart)
 	s.Require().NotNil(got.MonthlyWindowStart)
 	s.Require().WithinDuration(fiveHourStart, *got.FiveHourWindowStart, time.Microsecond)
-	s.Require().WithinDuration(calendarStart, *got.DailyWindowStart, time.Microsecond)
-	s.Require().WithinDuration(calendarStart, *got.WeeklyWindowStart, time.Microsecond)
-	s.Require().WithinDuration(calendarStart, *got.MonthlyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(dailyStart, *got.DailyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(dailyStart, *got.WeeklyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(dailyStart, *got.MonthlyWindowStart, time.Microsecond)
 	s.Require().InDelta(4.5, got.FiveHourUsageUSD, 1e-6)
 	s.Require().InDelta(20.0, got.DailyUsageUSD, 1e-6)
 }
@@ -524,15 +526,16 @@ func (s *UserSubscriptionRepoSuite) TestActivateWindows_StaleActivationPreserves
 	sub := s.mustCreateSubscription(user.ID, group.ID, nil)
 	activatedAt := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	manualResetAt := activatedAt.Add(2 * time.Hour)
+	manualDailyStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	s.Require().NoError(s.repo.ActivateWindows(s.ctx, sub.ID, activatedAt))
-	s.Require().NoError(s.repo.ResetUsageWindows(s.ctx, sub.ID, true, true, true, manualResetAt))
+	s.Require().NoError(s.repo.ActivateWindows(s.ctx, sub.ID, activatedAt, activatedAt))
+	s.Require().NoError(s.repo.ResetUsageWindows(s.ctx, sub.ID, true, true, true, manualDailyStart, manualResetAt))
 	// Simulate a concurrent request carrying the original unactivated snapshot.
-	s.Require().NoError(s.repo.ActivateWindows(s.ctx, sub.ID, activatedAt.Add(time.Hour)))
+	s.Require().NoError(s.repo.ActivateWindows(s.ctx, sub.ID, activatedAt.Add(time.Hour), activatedAt.Add(time.Hour)))
 
 	got, err := s.repo.GetByID(s.ctx, sub.ID)
 	s.Require().NoError(err)
-	s.Require().WithinDuration(manualResetAt, *got.DailyWindowStart, time.Microsecond)
+	s.Require().WithinDuration(manualDailyStart, *got.DailyWindowStart, time.Microsecond)
 	s.Require().WithinDuration(manualResetAt, *got.WeeklyWindowStart, time.Microsecond)
 	s.Require().WithinDuration(manualResetAt, *got.MonthlyWindowStart, time.Microsecond)
 }
@@ -590,7 +593,7 @@ func (s *UserSubscriptionRepoSuite) TestResetUsageWindows_ClearsUsageAfterAutoma
 	newWindowStart := oldWindowStart.Add(24 * time.Hour)
 	s.Require().NoError(s.repo.ResetDailyUsage(s.ctx, sub.ID, &oldWindowStart, newWindowStart))
 	s.Require().NoError(s.repo.IncrementUsage(s.ctx, sub.ID, 3))
-	s.Require().NoError(s.repo.ResetUsageWindows(s.ctx, sub.ID, true, false, false, newWindowStart))
+	s.Require().NoError(s.repo.ResetUsageWindows(s.ctx, sub.ID, true, false, false, newWindowStart, newWindowStart))
 
 	got, err := s.repo.GetByID(s.ctx, sub.ID)
 	s.Require().NoError(err)
@@ -824,9 +827,8 @@ func (s *UserSubscriptionRepoSuite) TestActiveExpiredBoundaries_UsageAndReset_Ba
 	s.Require().NoError(err, "GetActiveByUserIDAndGroupID")
 	s.Require().Equal(active.ID, got.ID, "expected active subscription")
 
-	fiveHourStart := time.Now().Add(-6 * time.Hour)
-	calendarStart := time.Now().Add(-25 * time.Hour)
-	s.Require().NoError(s.repo.ActivateWindows(s.ctx, active.ID, fiveHourStart, calendarStart), "ActivateWindows")
+	activateAt := time.Now().Add(-25 * time.Hour)
+	s.Require().NoError(s.repo.ActivateWindows(s.ctx, active.ID, activateAt, activateAt), "ActivateWindows")
 	s.Require().NoError(s.repo.IncrementUsage(s.ctx, active.ID, 1.25), "IncrementUsage")
 
 	after, err := s.repo.GetByID(s.ctx, active.ID)

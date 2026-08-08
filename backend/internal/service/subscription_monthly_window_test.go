@@ -8,12 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
 type activateWindowUserSubRepo struct {
 	userSubRepoNoop
-	windowStart time.Time
+	dailyStart    time.Time
+	periodicStart time.Time
 }
 
 type monthlyResetUserSubRepo struct {
@@ -36,8 +38,9 @@ func (r *monthlyResetUserSubRepo) ResetMonthlyUsage(_ context.Context, _ int64, 
 	return nil
 }
 
-func (r *activateWindowUserSubRepo) ActivateWindows(_ context.Context, _ int64, _ time.Time, calendarWindowStart time.Time) error {
-	r.windowStart = calendarWindowStart
+func (r *activateWindowUserSubRepo) ActivateWindows(_ context.Context, _ int64, dailyStart, periodicStart time.Time) error {
+	r.dailyStart = dailyStart
+	r.periodicStart = periodicStart
 	return nil
 }
 
@@ -55,8 +58,9 @@ func TestDelayedFirstUseAnchorsMonthlyWindowAtActivation(t *testing.T) {
 
 	require.NoError(t, svc.CheckAndActivateWindow(context.Background(), sub))
 
-	require.Equal(t, activatedAt, repo.windowStart)
-	monthlyWindowStart := repo.windowStart
+	require.Equal(t, activatedAt, repo.periodicStart)
+	require.Equal(t, timezone.StartOfDay(activatedAt), repo.dailyStart)
+	monthlyWindowStart := repo.periodicStart
 	resetAt, ok := sub.automaticWindowStartAt(&monthlyWindowStart, 30*24*time.Hour, activatedAt.Add(30*24*time.Hour))
 	require.True(t, ok)
 	require.Equal(t, activatedAt.Add(30*24*time.Hour), resetAt)

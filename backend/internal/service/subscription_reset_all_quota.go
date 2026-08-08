@@ -6,6 +6,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 var (
@@ -79,7 +80,15 @@ func (s *SubscriptionService) resetSubscriptionQuotaWindows(
 		}
 	}
 	if windows.daily || windows.weekly || windows.monthly {
-		if err := repo.ResetUsageWindows(ctx, sub.ID, windows.daily, windows.weekly, windows.monthly, now); err != nil {
+		if err := repo.ResetUsageWindows(
+			ctx,
+			sub.ID,
+			windows.daily,
+			windows.weekly,
+			windows.monthly,
+			timezone.StartOfDay(now),
+			now,
+		); err != nil {
 			return err
 		}
 	}

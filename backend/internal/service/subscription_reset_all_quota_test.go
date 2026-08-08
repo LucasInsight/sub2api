@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,8 @@ type resetAllQuotaUserSubRepoStub struct {
 	usageWindowIDs   []int64
 	usageWindowFlags [][3]bool
 	fiveHourStarts   []time.Time
-	calendarStarts   []time.Time
+	dailyStarts      []time.Time
+	periodicStarts   []time.Time
 	failOnID         int64
 }
 
@@ -35,10 +37,11 @@ func (r *resetAllQuotaUserSubRepoStub) ResetFiveHourUsage(_ context.Context, id 
 	return nil
 }
 
-func (r *resetAllQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, id int64, daily, weekly, monthly bool, start time.Time) error {
+func (r *resetAllQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, id int64, daily, weekly, monthly bool, dailyStart, periodicStart time.Time) error {
 	r.usageWindowIDs = append(r.usageWindowIDs, id)
 	r.usageWindowFlags = append(r.usageWindowFlags, [3]bool{daily, weekly, monthly})
-	r.calendarStarts = append(r.calendarStarts, start)
+	r.dailyStarts = append(r.dailyStarts, dailyStart)
+	r.periodicStarts = append(r.periodicStarts, periodicStart)
 	return nil
 }
 
@@ -89,8 +92,10 @@ func TestAdminResetAllQuota_ReusesAllWindowResetMethods(t *testing.T) {
 	require.Equal(t, []int64{11, 12}, subRepo.usageWindowIDs)
 	require.Equal(t, [][3]bool{{true, true, true}, {true, true, true}}, subRepo.usageWindowFlags)
 	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.fiveHourStarts[1])
-	require.Equal(t, subRepo.calendarStarts[0], subRepo.calendarStarts[1])
-	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.calendarStarts[0])
+	require.Equal(t, subRepo.dailyStarts[0], subRepo.dailyStarts[1])
+	require.Equal(t, subRepo.periodicStarts[0], subRepo.periodicStarts[1])
+	require.Equal(t, subRepo.fiveHourStarts[0], subRepo.periodicStarts[0])
+	require.Equal(t, timezone.StartOfDay(subRepo.fiveHourStarts[0]), subRepo.dailyStarts[0])
 	require.True(t, tracker.markHandled)
 }
 

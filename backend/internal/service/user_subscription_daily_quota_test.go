@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,8 +75,8 @@ func TestAssignOrExtendSubscription_ExpiredDailyCardStartsNewOneTimeQuota(t *tes
 	require.NotNil(t, renewed.FiveHourWindowStart)
 	require.NotNil(t, renewed.DailyWindowStart)
 	require.Equal(t, renewed.StartsAt, *renewed.FiveHourWindowStart)
-	require.Equal(t, renewed.StartsAt, *renewed.DailyWindowStart)
 	require.Equal(t, 0.0, renewed.FiveHourUsageUSD)
+	require.Equal(t, timezone.StartOfDay(renewed.StartsAt), *renewed.DailyWindowStart, "续期后日窗口应锚定当天 0 点")
 	require.Equal(t, 0.0, renewed.DailyUsageUSD)
 	require.Equal(t, 0.0, renewed.WeeklyUsageUSD)
 	require.Equal(t, 0.0, renewed.MonthlyUsageUSD)
