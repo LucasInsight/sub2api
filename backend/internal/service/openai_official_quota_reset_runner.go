@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -18,19 +19,20 @@ const (
 	openAIOfficialQuotaResetCycleTimeout  = 90 * time.Second
 	openAIOfficialQuotaResetProbeTimeout  = 20 * time.Second
 	openAIOfficialQuotaResetMaxProbeCount = 3
+	openAIOfficialAutoResetAuditAction    = "system.openai.quota.auto_reset_executed"
 )
 
 type OpenAIQuotaUsageQuerier interface {
 	QueryUsageSnapshot(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error)
 }
 
-// OpenAIOfficialQuotaResetRunner actively confirms official early 7-day
-// resets. The current notify-only mode leaves durable pending markers for an
-// administrator to consume through the manual reset action.
+// OpenAIOfficialQuotaResetRunner confirms official early 7-day resets and
+// executes one global subscription-quota reset after enough accounts agree.
 type OpenAIOfficialQuotaResetRunner struct {
 	tracker           OpenAIOfficial7dResetRepository
 	quotaQuerier      OpenAIQuotaUsageQuerier
 	quotaResetService *SubscriptionQuotaResetService
+	auditService      *AuditLogService
 	interval          time.Duration
 	now               func() time.Time
 
@@ -73,6 +75,7 @@ func ProvideOpenAIOfficialQuotaResetRunner(
 	quotaResetService *SubscriptionQuotaResetService,
 	lockCache LeaderLockCache,
 	db *sql.DB,
+	auditService *AuditLogService,
 ) *OpenAIOfficialQuotaResetRunner {
 	tracker, _ := accountRepo.(OpenAIOfficial7dResetRepository)
 	runner := NewOpenAIOfficialQuotaResetRunner(
@@ -82,6 +85,7 @@ func ProvideOpenAIOfficialQuotaResetRunner(
 		openAIOfficialQuotaResetInterval,
 	)
 	runner.SetLeaderLock(lockCache, db)
+	runner.auditService = auditService
 	runner.Start()
 	return runner
 }
@@ -179,8 +183,11 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if status.ActiveSubscriptionCount == 0 || status.EligibleAccountCount == 0 || status.AutomaticResetReady {
+	if status.ActiveSubscriptionCount == 0 || status.EligibleAccountCount == 0 {
 		return nil
+	}
+	if status.AutomaticResetReady {
+		return r.executeAutomaticReset(ctx, now)
 	}
 
 	candidates, err := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
@@ -203,13 +210,61 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !status.AutomaticResetReady && refreshed.AutomaticResetReady {
-		slog.Info("openai official quota reset requires manual confirmation",
-			"confirmation_count", refreshed.ConfirmationCount,
-			"required_confirmation_count", refreshed.RequiredConfirmationCount,
-		)
+	if refreshed.AutomaticResetReady {
+		return r.executeAutomaticReset(ctx, now)
 	}
 	return nil
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Context, now time.Time) error {
+	candidates, err := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
+	if err != nil {
+		return err
+	}
+	confirmedAccountIDs := make([]int64, 0, len(candidates))
+	for i := range candidates {
+		if candidates[i].Pending {
+			confirmedAccountIDs = append(confirmedAccountIDs, candidates[i].AccountID)
+		}
+	}
+	result, err := r.quotaResetService.AutomaticResetAllQuota(ctx, confirmedAccountIDs)
+	if err != nil {
+		return err
+	}
+	r.recordAutomaticResetAudit(now, confirmedAccountIDs, result)
+	slog.Info("openai official quota reset executed",
+		"confirmation_count", result.ConfirmationCount,
+		"consumed_event_count", result.ConsumedEventCount,
+		"reset_count", result.ResetCount,
+	)
+	return nil
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) recordAutomaticResetAudit(
+	executedAt time.Time,
+	confirmedAccountIDs []int64,
+	result *AdminResetAllQuotaResult,
+) {
+	if r == nil || r.auditService == nil || result == nil {
+		return
+	}
+	r.auditService.Record(&AuditLog{
+		CreatedAt:  executedAt.UTC(),
+		ActorEmail: "system",
+		ActorRole:  "system",
+		AuthMethod: "system",
+		Action:     openAIOfficialAutoResetAuditAction,
+		Method:     "SYSTEM",
+		Path:       "/internal/openai-official-quota-reset/execute",
+		StatusCode: http.StatusOK,
+		Extra: map[string]any{
+			"confirmed_account_ids": confirmedAccountIDs,
+			"confirmation_count":    result.ConfirmationCount,
+			"consumed_event_count":  result.ConsumedEventCount,
+			"reset_count":           result.ResetCount,
+			"result":                "executed",
+		},
+	})
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) nextProbeCandidates(

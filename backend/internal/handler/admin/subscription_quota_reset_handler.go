@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -9,6 +10,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+type clearFalsePositiveQuotaResetPendingRequest struct {
+	AccountID  int64     `json:"account_id"`
+	DetectedAt time.Time `json:"detected_at"`
+}
 
 // ResetAllQuotaStatus reports the manual reset availability, automation switch,
 // and official-reset confirmation state.
@@ -63,6 +69,40 @@ func (h *SubscriptionHandler) UpdateQuotaResetAutomation(c *gin.Context) {
 	status.AutoResetEnabled = *req.Enabled
 	middleware2.SetAuditExtra(c, map[string]any{"enabled": *req.Enabled, "result": "success"})
 	response.Success(c, status)
+}
+
+// ClearFalsePositiveQuotaResetPending dismisses one exact pending event
+// without resetting subscription quotas or deleting its audit history.
+func (h *SubscriptionHandler) ClearFalsePositiveQuotaResetPending(c *gin.Context) {
+	var req clearFalsePositiveQuotaResetPendingRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.AccountID <= 0 || req.DetectedAt.IsZero() {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	if h.quotaResetService == nil {
+		response.ErrorFrom(c, service.ErrResetAllQuotaUnavailable)
+		return
+	}
+
+	middleware2.SetAuditAction(c, "admin.subscriptions.quota.false_positive.clear")
+	auditFields := map[string]any{
+		"account_id":  req.AccountID,
+		"detected_at": req.DetectedAt.UTC().Format(time.RFC3339),
+		"result":      "success",
+	}
+	if err := h.quotaResetService.ClearFalsePositiveOpenAIResetPending(
+		c.Request.Context(),
+		req.AccountID,
+		req.DetectedAt,
+	); err != nil {
+		auditFields["result"] = "failed"
+		auditFields["error_code"] = infraerrors.Reason(err)
+		middleware2.SetAuditExtra(c, auditFields)
+		response.ErrorFrom(c, err)
+		return
+	}
+	middleware2.SetAuditExtra(c, auditFields)
+	response.Success(c, gin.H{"cleared": true})
 }
 
 // ResetAllQuota resets every active, unexpired user subscription and consumes

@@ -13,7 +13,10 @@ import (
 
 var _ service.OpenAIOfficial7dResetRepository = (*accountRepository)(nil)
 
-const openAI7dResetMinimumDetectionDifference = time.Hour
+const (
+	openAI7dResetMinimumDetectionDifference = 2 * time.Hour
+	openAI7dResetPostHandledCooldown        = 2 * time.Hour
+)
 
 func (r *accountRepository) ObserveOpenAI7dReset(
 	ctx context.Context,
@@ -68,15 +71,15 @@ func (r *accountRepository) observeOpenAI7dReset(
 	if previousResetAt == nil {
 		previousResetAt = openAI7dResetBaselineFromExtra(account.Extra)
 	}
-	_, detected := classifyOpenAI7dResetObservation(
+	_, detected, clearPending := classifyOpenAI7dResetObservation(
 		previousResetAt,
 		account.CodexQuotaObservedAt,
 		account.CodexOfficialEarlyResetHandledAt,
+		account.CodexOfficialEarlyResetPending,
 		observedAt,
 		resetAt,
 		boundaryGrace,
 	)
-	changed := previousResetAt != nil && !previousResetAt.Equal(resetAt)
 
 	update := client.Account.UpdateOneID(accountID).
 		SetCodex7dObservedResetAt(resetAt).
@@ -84,9 +87,9 @@ func (r *accountRepository) observeOpenAI7dReset(
 	if detected {
 		update.SetCodexOfficialEarlyResetPending(true).
 			SetCodexOfficialEarlyResetDetectedAt(observedAt)
-	} else if changed {
-		// A natural rollover, or an early reset already covered by the latest
-		// global subscription reset, invalidates stale pending evidence.
+	} else if clearPending {
+		// Once the previous official boundary has naturally elapsed, stale
+		// early-reset evidence no longer belongs to the active window.
 		update.SetCodexOfficialEarlyResetPending(false)
 	}
 	if _, err := update.Save(ctx); err != nil {
@@ -115,20 +118,33 @@ func openAI7dResetObservationIsStale(previousObservedAt *time.Time, observedAt t
 func classifyOpenAI7dResetObservation(
 	previousResetAt *time.Time,
 	previousObservedAt, handledAt *time.Time,
+	pending bool,
 	observedAt, resetAt time.Time,
 	boundaryGrace time.Duration,
-) (changed, detected bool) {
+) (changed, detected, clearPending bool) {
 	changed = previousResetAt != nil && !previousResetAt.Equal(resetAt)
-	detected = changed &&
-		resetAt.Sub(*previousResetAt).Abs() >= openAI7dResetMinimumDetectionDifference &&
-		observedAt.Add(boundaryGrace).Before(*previousResetAt)
-	if detected && handledAt != nil && (previousObservedAt == nil || !previousObservedAt.After(*handledAt)) {
-		// This account did not establish a new baseline after the most recent
-		// global reset. Its changed window is therefore a late observation of
-		// the event already covered by handledAt, not a new reset request.
-		detected = false
+	if !changed {
+		return changed, false, false
 	}
-	return changed, detected
+	if !observedAt.Add(boundaryGrace).Before(*previousResetAt) {
+		return changed, false, pending
+	}
+	if resetAt.Sub(*previousResetAt).Abs() < openAI7dResetMinimumDetectionDifference {
+		return changed, false, false
+	}
+	if handledAt != nil {
+		handled := handledAt.UTC().Truncate(time.Second)
+		if observedAt.Before(handled.Add(openAI7dResetPostHandledCooldown)) {
+			return changed, false, false
+		}
+		if previousObservedAt == nil || !previousObservedAt.After(handled) {
+			// This account did not establish a new baseline after the most recent
+			// global reset. Its changed window is therefore a late observation of
+			// the event already covered by handledAt, not a new reset request.
+			return changed, false, false
+		}
+	}
+	return changed, !pending, false
 }
 
 func openAI7dResetBaselineFromExtra(extra map[string]any) *time.Time {
@@ -187,8 +203,9 @@ func (r *accountRepository) ListPendingOpenAIOfficial7dResets(ctx context.Contex
 			continue
 		}
 		states = append(states, service.OpenAIOfficial7dResetState{
-			AccountID:  account.ID,
-			DetectedAt: *account.CodexOfficialEarlyResetDetectedAt,
+			AccountID:   account.ID,
+			AccountName: account.Name,
+			DetectedAt:  *account.CodexOfficialEarlyResetDetectedAt,
 		})
 	}
 	return states, nil
@@ -253,4 +270,29 @@ func (r *accountRepository) MarkAllOpenAIOfficial7dResetsHandled(ctx context.Con
 		SetCodexOfficialEarlyResetHandledAt(handledAt.UTC().Truncate(time.Second)).
 		Save(ctx)
 	return err
+}
+
+func (r *accountRepository) ClearOpenAIOfficial7dResetPending(
+	ctx context.Context,
+	accountID int64,
+	detectedAt time.Time,
+) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	updated, err := client.Account.Update().
+		Where(
+			dbaccount.IDEQ(accountID),
+			dbaccount.DeletedAtIsNil(),
+			dbaccount.PlatformEQ(service.PlatformOpenAI),
+			dbaccount.TypeEQ(service.AccountTypeOAuth),
+			dbaccount.ParentAccountIDIsNil(),
+			dbaccount.CodexOfficialEarlyResetPendingEQ(true),
+			dbaccount.CodexOfficialEarlyResetDetectedAtEQ(detectedAt.UTC().Truncate(time.Second)),
+		).
+		SetCodexOfficialEarlyResetPending(false).
+		ClearCodexOfficialEarlyResetDetectedAt().
+		Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	return updated == 1, nil
 }

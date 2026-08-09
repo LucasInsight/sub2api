@@ -10,20 +10,12 @@ import (
 )
 
 var (
-	ErrResetAllQuotaUnavailable       = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
-	ErrResetAllQuotaAckRequired       = infraerrors.BadRequest("RESET_ALL_QUOTA_ACKNOWLEDGEMENT_REQUIRED", "reset-all quota acknowledgement is required")
-	ErrQuotaResetAutomationDisabled   = infraerrors.Conflict("QUOTA_RESET_AUTOMATION_DISABLED", "quota reset automation is disabled")
-	ErrQuotaResetAutomationNotifyOnly = infraerrors.Conflict("QUOTA_RESET_AUTOMATION_NOTIFY_ONLY", "quota reset automation is currently notify-only")
-	ErrAutomaticQuotaResetPending     = infraerrors.Conflict("AUTOMATIC_QUOTA_RESET_NOT_CONFIRMED", "automatic quota reset does not have enough account confirmations")
-)
-
-type quotaResetAutomationMode string
-
-const (
-	quotaResetAutomationModeNotifyOnly quotaResetAutomationMode = "notify_only"
-	quotaResetAutomationModeExecute    quotaResetAutomationMode = "execute"
-
-	currentQuotaResetAutomationMode = quotaResetAutomationModeNotifyOnly
+	ErrResetAllQuotaUnavailable          = infraerrors.ServiceUnavailable("RESET_ALL_QUOTA_UNAVAILABLE", "reset-all subscription quota dependencies are unavailable")
+	ErrResetAllQuotaAckRequired          = infraerrors.BadRequest("RESET_ALL_QUOTA_ACKNOWLEDGEMENT_REQUIRED", "reset-all quota acknowledgement is required")
+	ErrQuotaResetAutomationDisabled      = infraerrors.Conflict("QUOTA_RESET_AUTOMATION_DISABLED", "quota reset automation is disabled")
+	ErrAutomaticQuotaResetPending        = infraerrors.Conflict("AUTOMATIC_QUOTA_RESET_NOT_CONFIRMED", "automatic quota reset does not have enough account confirmations")
+	ErrOpenAIOfficialResetPendingInvalid = infraerrors.BadRequest("OPENAI_OFFICIAL_RESET_PENDING_INVALID", "account ID and detected time are required")
+	ErrOpenAIOfficialResetPendingChanged = infraerrors.Conflict("OPENAI_OFFICIAL_RESET_PENDING_CHANGED", "the pending official reset event is no longer current")
 )
 
 type SubscriptionQuotaResetService struct {
@@ -128,17 +120,24 @@ func (s *SubscriptionService) invalidateQuotaResetCaches(targets []subscriptionQ
 }
 
 type AdminResetAllQuotaStatus struct {
-	Enabled                   bool       `json:"enabled"`
-	AutoResetEnabled          bool       `json:"auto_reset_enabled"`
-	PendingEventCount         int        `json:"pending_event_count"`
-	ActiveSubscriptionCount   int        `json:"active_subscription_count"`
-	EligibleAccountCount      int        `json:"eligible_account_count"`
-	ConfirmationCount         int        `json:"confirmation_count"`
-	RequiredConfirmationCount int        `json:"required_confirmation_count"`
-	AutomaticResetReady       bool       `json:"automatic_reset_ready"`
-	LatestDetectedAt          *time.Time `json:"latest_detected_at,omitempty"`
-	LastHandledAt             *time.Time `json:"last_handled_at,omitempty"`
-	DisabledReason            string     `json:"disabled_reason,omitempty"`
+	Enabled                   bool                          `json:"enabled"`
+	AutoResetEnabled          bool                          `json:"auto_reset_enabled"`
+	PendingEventCount         int                           `json:"pending_event_count"`
+	ActiveSubscriptionCount   int                           `json:"active_subscription_count"`
+	EligibleAccountCount      int                           `json:"eligible_account_count"`
+	ConfirmationCount         int                           `json:"confirmation_count"`
+	RequiredConfirmationCount int                           `json:"required_confirmation_count"`
+	AutomaticResetReady       bool                          `json:"automatic_reset_ready"`
+	PendingEvents             []AdminQuotaResetPendingEvent `json:"pending_events"`
+	LatestDetectedAt          *time.Time                    `json:"latest_detected_at,omitempty"`
+	LastHandledAt             *time.Time                    `json:"last_handled_at,omitempty"`
+	DisabledReason            string                        `json:"disabled_reason,omitempty"`
+}
+
+type AdminQuotaResetPendingEvent struct {
+	AccountID   int64     `json:"account_id"`
+	AccountName string    `json:"account_name"`
+	DetectedAt  time.Time `json:"detected_at"`
 }
 
 type AdminResetAllQuotaResult struct {
@@ -176,8 +175,14 @@ func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminReset
 		ActiveSubscriptionCount:   len(active),
 		EligibleAccountCount:      len(candidates),
 		RequiredConfirmationCount: automaticQuotaResetConfirmationRequirement(len(candidates)),
+		PendingEvents:             make([]AdminQuotaResetPendingEvent, 0, len(pending)),
 	}
 	for i := range pending {
+		status.PendingEvents = append(status.PendingEvents, AdminQuotaResetPendingEvent{
+			AccountID:   pending[i].AccountID,
+			AccountName: pending[i].AccountName,
+			DetectedAt:  pending[i].DetectedAt,
+		})
 		if status.LatestDetectedAt == nil || pending[i].DetectedAt.After(*status.LatestDetectedAt) {
 			detectedAt := pending[i].DetectedAt
 			status.LatestDetectedAt = &detectedAt
@@ -200,6 +205,32 @@ func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminReset
 		status.Enabled = true
 	}
 	return status, nil
+}
+
+func (s *SubscriptionQuotaResetService) ClearFalsePositiveOpenAIResetPending(
+	ctx context.Context,
+	accountID int64,
+	detectedAt time.Time,
+) error {
+	if s == nil || s.tracker == nil {
+		return ErrResetAllQuotaUnavailable
+	}
+	if accountID <= 0 || detectedAt.IsZero() {
+		return ErrOpenAIOfficialResetPendingInvalid
+	}
+
+	cleared, err := s.tracker.ClearOpenAIOfficial7dResetPending(
+		ctx,
+		accountID,
+		detectedAt.UTC().Truncate(time.Second),
+	)
+	if err != nil {
+		return err
+	}
+	if !cleared {
+		return ErrOpenAIOfficialResetPendingChanged
+	}
+	return nil
 }
 
 func automaticQuotaResetConfirmationRequirement(eligibleAccountCount int) int {
@@ -241,9 +272,6 @@ func (s *SubscriptionQuotaResetService) AutomaticResetAllQuota(ctx context.Conte
 	}
 	if !enabled {
 		return nil, ErrQuotaResetAutomationDisabled
-	}
-	if currentQuotaResetAutomationMode != quotaResetAutomationModeExecute {
-		return nil, ErrQuotaResetAutomationNotifyOnly
 	}
 	return s.resetAllSubscriptionQuotas(ctx, confirmedAccountIDs, true)
 }

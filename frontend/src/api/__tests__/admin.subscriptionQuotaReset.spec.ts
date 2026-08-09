@@ -11,6 +11,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import {
+  clearFalsePositiveQuotaResetPending,
   getResetAllQuotaStatus,
   resetAllQuota,
   updateQuotaResetAutomation,
@@ -51,6 +52,17 @@ describe('admin subscription quota reset API', () => {
       '/admin/subscriptions/reset-all-quota',
       { acknowledged: true },
       { headers: { 'Idempotency-Key': 'subscription-reset-all-test-key' } },
+    )
+  })
+
+  it('clears only the selected false-positive pending event', async () => {
+    post.mockResolvedValue({ data: { cleared: true } })
+
+    await clearFalsePositiveQuotaResetPending(17, '2026-08-09T07:29:36Z')
+
+    expect(post).toHaveBeenCalledWith(
+      '/admin/subscriptions/reset-all-quota/pending-events/clear',
+      { account_id: 17, detected_at: '2026-08-09T07:29:36Z' },
     )
   })
 })

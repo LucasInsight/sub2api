@@ -3,10 +3,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import SubscriptionQuotaResetControls from '../SubscriptionQuotaResetControls.vue'
 
-const { getStatus, updateAutomation, resetAll, showError, showSuccess } = vi.hoisted(() => ({
+const { getStatus, updateAutomation, resetAll, clearFalsePositive, showError, showSuccess } = vi.hoisted(() => ({
   getStatus: vi.fn(),
   updateAutomation: vi.fn(),
   resetAll: vi.fn(),
+  clearFalsePositive: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -15,6 +16,7 @@ vi.mock('@/api/admin/subscriptionQuotaReset', () => ({
   getResetAllQuotaStatus: getStatus,
   updateQuotaResetAutomation: updateAutomation,
   resetAllQuota: resetAll,
+  clearFalsePositiveQuotaResetPending: clearFalsePositive,
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -38,17 +40,18 @@ const status = (overrides: Record<string, unknown> = {}) => ({
   confirmation_count: 0,
   required_confirmation_count: 2,
   automatic_reset_ready: false,
+  pending_events: [],
   ...overrides,
 })
 
 const ConfirmDialogStub = {
-  props: ['show', 'confirmDisabled'],
+  props: ['show', 'confirmDisabled', 'title'],
   emits: ['confirm', 'cancel'],
   template: `
     <div v-if="show" data-testid="reset-all-quota-dialog">
       <slot />
       <button
-        data-testid="reset-all-quota-submit"
+        :data-testid="title === 'admin.subscriptions.clearFalsePositiveTitle' ? 'clear-false-positive-submit' : 'reset-all-quota-submit'"
         :disabled="confirmDisabled"
         @click="$emit('confirm')"
       >confirm</button>
@@ -69,10 +72,27 @@ const ToggleStub = {
   `,
 }
 
+const SelectStub = {
+  props: ['modelValue', 'options', 'disabled'],
+  emits: ['update:modelValue'],
+  template: `
+    <select
+      :value="modelValue"
+      :disabled="disabled"
+      @change="$emit('update:modelValue', Number($event.target.value))"
+    >
+      <option v-for="option in options" :key="option.value" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `,
+}
+
 const mountControls = () => mount(SubscriptionQuotaResetControls, {
   global: {
     stubs: {
       ConfirmDialog: ConfirmDialogStub,
+      Select: SelectStub,
       Toggle: ToggleStub,
       Icon: true,
     },
@@ -85,6 +105,7 @@ describe('SubscriptionQuotaResetControls', () => {
     getStatus.mockResolvedValue(status())
     updateAutomation.mockResolvedValue(status({ auto_reset_enabled: true }))
     resetAll.mockResolvedValue({ reset_count: 3, consumed_event_count: 2, confirmation_count: 0 })
+    clearFalsePositive.mockResolvedValue({ cleared: true })
   })
 
   afterEach(() => {
@@ -149,5 +170,48 @@ describe('SubscriptionQuotaResetControls', () => {
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(60_000)
     expect(getStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears a selected false-positive event without resetting subscription quotas', async () => {
+    const pendingEvent = {
+      account_id: 17,
+      account_name: 'primary',
+      detected_at: '2026-08-09T07:29:36Z',
+    }
+    getStatus
+      .mockResolvedValueOnce(status({ pending_event_count: 1, pending_events: [pendingEvent] }))
+      .mockResolvedValueOnce(status())
+    const wrapper = mountControls()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="clear-false-positive-button"]').trigger('click')
+    await wrapper.get('[data-testid="clear-false-positive-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(clearFalsePositive).toHaveBeenCalledWith(17, '2026-08-09T07:29:36Z')
+    expect(resetAll).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="clear-false-positive-button"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('clears only the event selected from multiple pending accounts', async () => {
+    const pendingEvents = [
+      { account_id: 17, account_name: 'primary', detected_at: '2026-08-09T07:29:36Z' },
+      { account_id: 23, account_name: 'secondary', detected_at: '2026-08-09T07:31:04Z' },
+    ]
+    getStatus
+      .mockResolvedValueOnce(status({ pending_event_count: 2, pending_events: pendingEvents }))
+      .mockResolvedValueOnce(status({ pending_event_count: 1, pending_events: [pendingEvents[0]] }))
+    const wrapper = mountControls()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="clear-false-positive-button"]').trigger('click')
+    await wrapper.get('[data-testid="clear-false-positive-select"]').setValue('23')
+    await wrapper.get('[data-testid="clear-false-positive-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(clearFalsePositive).toHaveBeenCalledWith(23, '2026-08-09T07:31:04Z')
+    expect(clearFalsePositive).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 })

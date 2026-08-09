@@ -2,6 +2,18 @@
   <div class="mt-3 flex w-full flex-wrap items-center justify-end gap-3">
     <button
       type="button"
+      data-testid="clear-false-positive-button"
+      class="btn btn-secondary text-red-600 disabled:text-gray-400 dark:text-red-400 dark:disabled:text-gray-500"
+      :disabled="!canClearFalsePositive"
+      :title="clearFalsePositiveButtonTitle"
+      @click="openClearFalsePositiveConfirm"
+    >
+      <Icon name="trash" size="md" class="mr-2" />
+      {{ t('admin.subscriptions.clearFalsePositive') }}
+    </button>
+
+    <button
+      type="button"
       data-testid="reset-all-quota-button"
       class="btn"
       :class="resetAllQuotaButtonClass"
@@ -48,21 +60,49 @@
       <span>{{ t('admin.subscriptions.resetAllQuotaAcknowledgement') }}</span>
     </label>
   </ConfirmDialog>
+
+  <ConfirmDialog
+    :show="showClearFalsePositiveConfirm"
+    :title="t('admin.subscriptions.clearFalsePositiveTitle')"
+    :message="t('admin.subscriptions.clearFalsePositiveConfirm')"
+    :confirm-text="t('admin.subscriptions.clearFalsePositive')"
+    :cancel-text="t('common.cancel')"
+    :danger="true"
+    :confirm-disabled="!selectedPendingEvent || clearingFalsePositive"
+    @confirm="confirmClearFalsePositive"
+    @cancel="closeClearFalsePositiveConfirm"
+  >
+    <div data-testid="clear-false-positive-dialog">
+      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+        {{ t('admin.subscriptions.clearFalsePositiveAccount') }}
+      </label>
+      <Select
+        v-model="selectedPendingAccountID"
+        data-testid="clear-false-positive-select"
+        :options="pendingEventOptions"
+        :disabled="clearingFalsePositive"
+        :aria-label="t('admin.subscriptions.clearFalsePositiveAccount')"
+      />
+    </div>
+  </ConfirmDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import {
+  clearFalsePositiveQuotaResetPending,
   getResetAllQuotaStatus,
   resetAllQuota,
   updateQuotaResetAutomation,
   type ResetAllQuotaStatus
 } from '@/api/admin/subscriptionQuotaReset'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { formatDateTime } from '@/utils/format'
 
 const statusPollIntervalMs = 60_000
 
@@ -80,11 +120,45 @@ const updatingAutomation = ref(false)
 const resetting = ref(false)
 const showConfirm = ref(false)
 const acknowledged = ref(false)
+const clearingFalsePositive = ref(false)
+const showClearFalsePositiveConfirm = ref(false)
+const selectedPendingAccountID = ref<number | null>(null)
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
 const canResetAllQuota = computed(
   () => Boolean(status.value?.enabled) && !loadingStatus.value && !resetting.value
 )
+
+const pendingEvents = computed(() => status.value?.pending_events ?? [])
+
+const selectedPendingEvent = computed(() =>
+  pendingEvents.value.find(event => event.account_id === selectedPendingAccountID.value) ?? null
+)
+
+const pendingEventOptions = computed(() => pendingEvents.value.map(event => {
+  const account = event.account_name ? `${event.account_name} (#${event.account_id})` : `#${event.account_id}`
+  return {
+    value: event.account_id,
+    label: t('admin.subscriptions.clearFalsePositiveOption', {
+      account,
+      time: formatDateTime(event.detected_at),
+    }),
+  }
+}))
+
+const canClearFalsePositive = computed(() =>
+  pendingEvents.value.length > 0 &&
+  !loadingStatus.value &&
+  !clearingFalsePositive.value
+)
+
+const clearFalsePositiveButtonTitle = computed(() => {
+  if (clearingFalsePositive.value) return t('admin.subscriptions.clearingFalsePositive')
+  if (loadingStatus.value) return t('admin.subscriptions.checkingResetAllQuota')
+  if (statusFailed.value) return t('admin.subscriptions.resetAllQuotaStatusFailed')
+  if (pendingEvents.value.length === 0) return t('admin.subscriptions.clearFalsePositiveNoPending')
+  return t('admin.subscriptions.clearFalsePositiveDescription')
+})
 
 const resetAllQuotaButtonClass = computed(() => {
   if (status.value?.automatic_reset_ready) {
@@ -153,6 +227,37 @@ const closeConfirm = () => {
   acknowledged.value = false
 }
 
+const openClearFalsePositiveConfirm = () => {
+  if (!canClearFalsePositive.value) return
+  showClearFalsePositiveConfirm.value = true
+}
+
+const closeClearFalsePositiveConfirm = () => {
+  if (clearingFalsePositive.value) return
+  showClearFalsePositiveConfirm.value = false
+}
+
+const confirmClearFalsePositive = async () => {
+  const event = selectedPendingEvent.value
+  if (!event || clearingFalsePositive.value) return
+
+  clearingFalsePositive.value = true
+  try {
+    await clearFalsePositiveQuotaResetPending(event.account_id, event.detected_at)
+    showClearFalsePositiveConfirm.value = false
+    appStore.showSuccess(t('admin.subscriptions.clearFalsePositiveSuccess', {
+      account: event.account_name || `#${event.account_id}`,
+    }))
+    await loadStatus()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.subscriptions.failedToClearFalsePositive'))
+    console.error('Error clearing false-positive quota reset event:', error)
+    await loadStatus()
+  } finally {
+    clearingFalsePositive.value = false
+  }
+}
+
 const confirmReset = async () => {
   if (!canResetAllQuota.value || resetting.value || !acknowledged.value) return
   closeConfirm()
@@ -174,6 +279,12 @@ const confirmReset = async () => {
 const handleVisibilityChange = () => {
   if (!document.hidden) void loadStatus()
 }
+
+watch(pendingEvents, events => {
+  if (!events.some(event => event.account_id === selectedPendingAccountID.value)) {
+    selectedPendingAccountID.value = events[0]?.account_id ?? null
+  }
+})
 
 onMounted(() => {
   void loadStatus()

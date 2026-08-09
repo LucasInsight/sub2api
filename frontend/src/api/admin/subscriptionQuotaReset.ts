@@ -1,5 +1,11 @@
 import { apiClient } from '../client'
 
+export interface QuotaResetPendingEvent {
+  account_id: number
+  account_name: string
+  detected_at: string
+}
+
 export interface ResetAllQuotaStatus {
   enabled: boolean
   auto_reset_enabled: boolean
@@ -9,9 +15,14 @@ export interface ResetAllQuotaStatus {
   confirmation_count: number
   required_confirmation_count: number
   automatic_reset_ready: boolean
+  pending_events: QuotaResetPendingEvent[]
   latest_detected_at?: string
   last_handled_at?: string
   disabled_reason?: 'no_active_subscriptions'
+}
+
+export interface ClearFalsePositiveQuotaResetResult {
+  cleared: boolean
 }
 
 export interface ResetAllQuotaResult {
@@ -31,6 +42,17 @@ export async function updateQuotaResetAutomation(enabled: boolean): Promise<Rese
   const { data } = await apiClient.put<ResetAllQuotaStatus>(
     '/admin/subscriptions/reset-all-quota/automation',
     { enabled }
+  )
+  return data
+}
+
+export async function clearFalsePositiveQuotaResetPending(
+  accountID: number,
+  detectedAt: string,
+): Promise<ClearFalsePositiveQuotaResetResult> {
+  const { data } = await apiClient.post<ClearFalsePositiveQuotaResetResult>(
+    '/admin/subscriptions/reset-all-quota/pending-events/clear',
+    { account_id: accountID, detected_at: detectedAt },
   )
   return data
 }

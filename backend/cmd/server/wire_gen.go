@@ -330,7 +330,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	proxyExpiryService := service.ProvideProxyExpiryService(proxyRepository)
 	subscriptionExpiryService := service.ProvideSubscriptionExpiryService(userSubscriptionRepository, settingRepository, notificationEmailService, leaderLockCache, db)
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
-	openAIOfficialQuotaResetRunner := service.ProvideOpenAIOfficialQuotaResetRunner(accountRepository, openAIQuotaService, subscriptionQuotaResetService, leaderLockCache, db)
+	openAIOfficialQuotaResetRunner := service.ProvideOpenAIOfficialQuotaResetRunner(accountRepository, openAIQuotaService, subscriptionQuotaResetService, leaderLockCache, db, auditLogService)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)

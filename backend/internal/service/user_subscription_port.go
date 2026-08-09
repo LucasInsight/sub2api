@@ -54,8 +54,9 @@ type ActiveUserSubscriptionQuotaResetRepository interface {
 }
 
 type OpenAIOfficial7dResetState struct {
-	AccountID  int64
-	DetectedAt time.Time
+	AccountID   int64
+	AccountName string
+	DetectedAt  time.Time
 }
 
 type OpenAIOfficial7dResetObservation struct {
@@ -82,4 +83,5 @@ type OpenAIOfficial7dResetRepository interface {
 	ListPendingOpenAIOfficial7dResets(ctx context.Context) ([]OpenAIOfficial7dResetState, error)
 	ListEligibleOpenAIOfficial7dResetCandidates(ctx context.Context, now time.Time) ([]OpenAIOfficial7dResetCandidate, error)
 	MarkAllOpenAIOfficial7dResetsHandled(ctx context.Context, handledAt time.Time) error
+	ClearOpenAIOfficial7dResetPending(ctx context.Context, accountID int64, detectedAt time.Time) (bool, error)
 }

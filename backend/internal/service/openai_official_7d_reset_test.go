@@ -43,6 +43,10 @@ func (r *captureOfficial7dResetRepo) MarkAllOpenAIOfficial7dResetsHandled(contex
 	return nil
 }
 
+func (r *captureOfficial7dResetRepo) ClearOpenAIOfficial7dResetPending(context.Context, int64, time.Time) (bool, error) {
+	return false, nil
+}
+
 func TestOpenAIQuota7dResetAt_OnlyUsesLongWindow(t *testing.T) {
 	fiveHour := time.Date(2026, 7, 18, 15, 0, 0, 0, time.UTC)
 	sevenDay := time.Date(2026, 7, 25, 10, 0, 0, 0, time.UTC)
