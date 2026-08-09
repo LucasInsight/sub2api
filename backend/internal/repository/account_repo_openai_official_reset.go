@@ -13,6 +13,8 @@ import (
 
 var _ service.OpenAIOfficial7dResetRepository = (*accountRepository)(nil)
 
+const openAI7dResetMinimumDetectionDifference = time.Hour
+
 func (r *accountRepository) ObserveOpenAI7dReset(
 	ctx context.Context,
 	accountID int64,
@@ -117,7 +119,9 @@ func classifyOpenAI7dResetObservation(
 	boundaryGrace time.Duration,
 ) (changed, detected bool) {
 	changed = previousResetAt != nil && !previousResetAt.Equal(resetAt)
-	detected = changed && observedAt.Add(boundaryGrace).Before(*previousResetAt)
+	detected = changed &&
+		resetAt.Sub(*previousResetAt).Abs() >= openAI7dResetMinimumDetectionDifference &&
+		observedAt.Add(boundaryGrace).Before(*previousResetAt)
 	if detected && handledAt != nil && (previousObservedAt == nil || !previousObservedAt.After(*handledAt)) {
 		// This account did not establish a new baseline after the most recent
 		// global reset. Its changed window is therefore a late observation of

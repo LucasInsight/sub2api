@@ -42,6 +42,32 @@ func TestClassifyOpenAI7dResetObservation(t *testing.T) {
 		require.True(t, detected)
 	})
 
+	t.Run("sub-hour reset-time drift is not detected", func(t *testing.T) {
+		changed, detected := classifyOpenAI7dResetObservation(
+			&oldReset,
+			&previousObservedAt,
+			nil,
+			observedAt,
+			oldReset.Add(2*time.Second),
+			time.Minute,
+		)
+		require.True(t, changed)
+		require.False(t, detected)
+	})
+
+	t.Run("one-hour reset-time change is detected", func(t *testing.T) {
+		changed, detected := classifyOpenAI7dResetObservation(
+			&oldReset,
+			&previousObservedAt,
+			nil,
+			observedAt,
+			oldReset.Add(time.Hour),
+			time.Minute,
+		)
+		require.True(t, changed)
+		require.True(t, detected)
+	})
+
 	t.Run("late observation covered by latest global reset", func(t *testing.T) {
 		latePreviousObservation := handledAt.Add(-time.Minute)
 		_, got := classifyOpenAI7dResetObservation(
