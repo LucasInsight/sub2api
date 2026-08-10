@@ -23,33 +23,53 @@
       />
 
       <div v-if="showOAuthLogin" class="space-y-3">
+        <TurnstileWidget
+          v-if="actionCaptchaEnabled"
+          ref="turnstileRef"
+          :turnstile-enabled="false"
+          turnstile-site-key=""
+          :tencent-enabled="tencentCaptchaEnabled"
+          :tencent-app-id="tencentCaptchaAppId"
+          :tencent-region="tencentCaptchaRegion"
+          :aliyun-enabled="aliyunCaptchaEnabled"
+          :aliyun-scene-id="aliyunCaptchaSceneId"
+          :aliyun-prefix="aliyunCaptchaPrefix"
+          :aliyun-region="aliyunCaptchaRegion"
+          @error="handleCaptchaError"
+        />
+
         <EmailOAuthButtons
           :disabled="authActionDisabled"
           :github-enabled="githubOAuthEnabled"
           :google-enabled="googleOAuthEnabled"
           :show-divider="false"
+          @start="handleOAuthStart"
         />
 
         <LinuxDoOAuthSection
           v-if="linuxdoOAuthEnabled"
           :disabled="authActionDisabled"
           :show-divider="false"
+          @start="handleOAuthStart"
         />
         <DingTalkOAuthSection
           v-if="dingtalkOAuthEnabled"
           :disabled="authActionDisabled"
           :show-divider="false"
+          @start="handleOAuthStart"
         />
         <WechatOAuthSection
           v-if="wechatOAuthEnabled"
           :disabled="authActionDisabled"
           :show-divider="false"
+          @start="handleOAuthStart"
         />
         <OidcOAuthSection
           v-if="oidcOAuthEnabled"
           :disabled="authActionDisabled"
           :provider-name="oidcOAuthProviderName"
           :show-divider="false"
+          @start="handleOAuthStart"
         />
       </div>
 
@@ -81,9 +101,17 @@ import WechatOAuthSection from '@/components/auth/WechatOAuthSection.vue'
 import EmailOAuthButtons from '@/components/auth/EmailOAuthButtons.vue'
 import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import Icon from '@/components/icons/Icon.vue'
+import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAppStore } from '@/stores'
-import { getPublicSettings, isWeChatWebOAuthEnabled } from '@/api/auth'
+import {
+  buildOAuthLoginStartURL,
+  getPublicSettings,
+  isWeChatWebOAuthEnabled,
+  startOAuthLogin,
+  type OAuthLoginStart
+} from '@/api/auth'
 import type { LoginAgreementDocument } from '@/types'
+import { extractI18nErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -91,7 +119,15 @@ const appStore = useAppStore()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 const publicSettingsLoaded = ref<boolean>(false)
+const isStartingOAuth = ref<boolean>(false)
 
+const tencentCaptchaEnabled = ref<boolean>(false)
+const tencentCaptchaAppId = ref<string>('')
+const tencentCaptchaRegion = ref<string>('cn')
+const aliyunCaptchaEnabled = ref<boolean>(false)
+const aliyunCaptchaSceneId = ref<string>('')
+const aliyunCaptchaPrefix = ref<string>('')
+const aliyunCaptchaRegion = ref<string>('cn')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const dingtalkOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
@@ -107,13 +143,27 @@ const loginAgreementRevision = ref<string>('')
 const loginAgreementDocuments = ref<LoginAgreementDocument[]>([])
 const agreementAccepted = ref<boolean>(false)
 const showAgreementModal = ref<boolean>(false)
+const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+
+const tencentCaptchaReady = computed(
+  () => tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)
+)
+const aliyunCaptchaReady = computed(
+  () =>
+    aliyunCaptchaEnabled.value &&
+    Boolean(aliyunCaptchaSceneId.value) &&
+    Boolean(aliyunCaptchaPrefix.value)
+)
+const actionCaptchaEnabled = computed(
+  () => tencentCaptchaReady.value || aliyunCaptchaReady.value
+)
 
 const agreementGateActive = computed(
   () => loginAgreementEnabled.value && !agreementAccepted.value
 )
 
 const authActionDisabled = computed(
-  () => !publicSettingsLoaded.value || agreementGateActive.value
+  () => !publicSettingsLoaded.value || agreementGateActive.value || isStartingOAuth.value
 )
 
 const showOAuthLogin = computed(
@@ -136,6 +186,13 @@ onMounted(async () => {
 
   try {
     const settings = await getPublicSettings()
+    tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true
+    tencentCaptchaAppId.value = settings.tencent_captcha_app_id || ''
+    tencentCaptchaRegion.value = settings.tencent_captcha_region || 'cn'
+    aliyunCaptchaEnabled.value = settings.aliyun_captcha_enabled === true
+    aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
+    aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
+    aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     dingtalkOAuthEnabled.value = settings.dingtalk_oauth_enabled ?? false
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
@@ -212,5 +269,46 @@ function rejectLoginAgreement(): void {
   agreementAccepted.value = false
   showAgreementModal.value = false
   appStore.showWarning(t('legal.loginAgreementPrompt.loginRejectedWarning'))
+}
+
+function resetCaptchaProof(): void {
+  turnstileRef.value?.reset()
+}
+
+function handleCaptchaError(): void {
+  appStore.showError(t('auth.turnstileFailed'))
+}
+
+async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
+  if (authActionDisabled.value) return
+
+  if (!actionCaptchaEnabled.value) {
+    window.location.href = buildOAuthLoginStartURL(request)
+    return
+  }
+
+  isStartingOAuth.value = true
+  try {
+    const proof = await turnstileRef.value?.verifyAction()
+    if (!proof) return
+
+    const result = await startOAuthLogin(
+      request,
+      tencentCaptchaReady.value
+        ? {
+            tencent_captcha_ticket: proof.token,
+            tencent_captcha_randstr: proof.randstr
+          }
+        : { turnstile_token: proof.token }
+    )
+    window.location.href = result.authorize_url
+  } catch (error: unknown) {
+    appStore.showError(
+      extractI18nErrorMessage(error, t, 'auth.errors', t('auth.turnstileFailed'))
+    )
+  } finally {
+    resetCaptchaProof()
+    isStartingOAuth.value = false
+  }
 }
 </script>
