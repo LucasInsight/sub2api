@@ -172,13 +172,6 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	defer release()
 
 	now := r.now()
-	automationEnabled, err := r.quotaResetService.AutomationEnabled(ctx)
-	if err != nil {
-		return err
-	}
-	if !automationEnabled {
-		return nil
-	}
 	status, err := r.quotaResetService.Status(ctx)
 	if err != nil {
 		return err
@@ -187,7 +180,10 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 		return nil
 	}
 	if status.AutomaticResetReady {
-		return r.executeAutomaticReset(ctx, now)
+		if status.AutoResetEnabled {
+			return r.executeAutomaticReset(ctx, now)
+		}
+		return nil
 	}
 
 	candidates, err := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
@@ -210,7 +206,7 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if refreshed.AutomaticResetReady {
+	if refreshed.AutomaticResetReady && refreshed.AutoResetEnabled {
 		return r.executeAutomaticReset(ctx, now)
 	}
 	return nil

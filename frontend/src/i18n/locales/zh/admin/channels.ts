@@ -693,7 +693,7 @@ export default {
       resetAllQuotaStatusFailed: '无法获取全量重置状态，请刷新后重试',
       resetAllQuotaOfficialResetDetected: '已检测到 OpenAI 官方提前重置，请执行全量配额重置',
       autoResetQuota: '自动重置配额',
-      autoResetQuotaDescription: '开启后每 5 分钟探测 OpenAI 官方 7 天配额周期，达到确认门槛后自动重置全部订阅配额',
+      autoResetQuotaDescription: '系统始终每 5 分钟探测 OpenAI 官方 7 天配额周期；开启后，达到确认门槛将自动重置全部订阅配额',
       autoResetQuotaUpdated: '自动重置配额设置已更新',
       failedToUpdateAutoResetQuota: '更新自动重置配额设置失败',
       clearFalsePositive: '清理误报',

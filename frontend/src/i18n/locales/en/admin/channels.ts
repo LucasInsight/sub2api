@@ -693,7 +693,7 @@ export default {
       resetAllQuotaStatusFailed: 'Unable to load reset-all status; refresh and try again',
       resetAllQuotaOfficialResetDetected: 'An early official OpenAI reset was detected; reset all quotas',
       autoResetQuota: 'Automatic quota reset',
-      autoResetQuotaDescription: 'Check the official OpenAI 7-day quota cycle every 5 minutes and automatically reset all subscription quotas after confirmation',
+      autoResetQuotaDescription: 'The official OpenAI 7-day quota cycle is always checked every 5 minutes; enable this setting to reset all subscription quotas automatically after confirmation',
       autoResetQuotaUpdated: 'Automatic quota reset setting updated',
       failedToUpdateAutoResetQuota: 'Failed to update automatic quota reset setting',
       clearFalsePositive: 'Clear False Positive',

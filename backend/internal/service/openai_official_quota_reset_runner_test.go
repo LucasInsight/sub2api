@@ -109,14 +109,14 @@ func newAutomaticResetRunnerTestService(
 	return runner, subRepo, quotaResetService
 }
 
-func TestOpenAIOfficialQuotaResetRunner_DisabledDoesNotProbe(t *testing.T) {
+func TestOpenAIOfficialQuotaResetRunner_DisabledProbesWithoutReset(t *testing.T) {
 	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
 	tracker := &automaticResetTrackerStub{candidates: []OpenAIOfficial7dResetCandidate{{AccountID: 1}}}
 	querier := &automaticQuotaQuerierStub{tracker: tracker, pending: map[int64]bool{1: true}, fail: map[int64]error{}, now: now}
 	runner, subRepo, _ := newAutomaticResetRunnerTestService(tracker, querier, false)
 
 	require.NoError(t, runner.RunOnce(context.Background()))
-	require.Empty(t, querier.queried)
+	require.Equal(t, []int64{1}, querier.queried)
 	require.Empty(t, subRepo.fiveHourIDs)
 }
 
