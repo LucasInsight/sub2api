@@ -48,6 +48,7 @@ type OpenAIOfficialQuotaResetRunner struct {
 	stopped              bool
 	runMutex             sync.Mutex
 	probeCursorAccountID int64
+	trigger              *openAIOfficialQuotaResetTrigger
 }
 
 func NewOpenAIOfficialQuotaResetRunner(
@@ -66,6 +67,7 @@ func NewOpenAIOfficialQuotaResetRunner(
 		instanceID:        uuid.NewString(),
 		ctx:               ctx,
 		cancel:            cancel,
+		trigger:           newOpenAIOfficialQuotaResetTrigger(),
 	}
 }
 
@@ -76,6 +78,7 @@ func ProvideOpenAIOfficialQuotaResetRunner(
 	lockCache LeaderLockCache,
 	db *sql.DB,
 	auditService *AuditLogService,
+	official7dResetObserver *OpenAIOfficial7dResetObserver,
 ) *OpenAIOfficialQuotaResetRunner {
 	tracker, _ := accountRepo.(OpenAIOfficial7dResetRepository)
 	runner := NewOpenAIOfficialQuotaResetRunner(
@@ -86,6 +89,7 @@ func ProvideOpenAIOfficialQuotaResetRunner(
 	)
 	runner.SetLeaderLock(lockCache, db)
 	runner.auditService = auditService
+	official7dResetObserver.setDetectionNotifier(runner)
 	runner.Start()
 	return runner
 }
@@ -139,6 +143,8 @@ func (r *OpenAIOfficialQuotaResetRunner) runLoop() {
 			return
 		case <-ticker.C:
 			r.runCycle()
+		case <-r.immediateProbeWakeChannel():
+			r.runTriggeredCycle()
 		}
 	}
 }
@@ -190,21 +196,32 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, candidate := range r.nextProbeCandidates(candidates) {
-		accountID := candidate.AccountID
-		r.probeCursorAccountID = accountID
-		probeCtx, cancel := context.WithTimeout(ctx, openAIOfficialQuotaResetProbeTimeout)
-		_, probeErr := r.quotaQuerier.QueryUsageSnapshot(probeCtx, accountID)
-		cancel()
-		if probeErr != nil {
-			slog.Warn("openai official quota reset probe failed", "account_id", accountID, "error", probeErr)
-			continue
-		}
-	}
+	r.resetPeriodicProbeDetection()
+	defer r.resetPeriodicProbeDetection()
+	attempted := r.probeCandidateBatch(ctx, r.nextProbeCandidates(candidates))
 
 	refreshed, err := r.quotaResetService.Status(ctx)
 	if err != nil {
 		return err
+	}
+	periodicDetection := r.consumePeriodicProbeDetection()
+	// A newly detected reset gets one bounded confirmation batch, excluding
+	// every account already attempted by this cycle.
+	if periodicDetection &&
+		refreshed.ConfirmationCount > status.ConfirmationCount &&
+		!refreshed.AutomaticResetReady {
+		refreshedCandidates, candidateErr := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
+		if candidateErr != nil {
+			return candidateErr
+		}
+		additional := r.nextUnprobedCandidates(refreshedCandidates, attempted)
+		if len(additional) > 0 {
+			r.probeCandidateBatch(ctx, additional)
+			refreshed, err = r.quotaResetService.Status(ctx)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	if refreshed.AutomaticResetReady && refreshed.AutoResetEnabled {
 		return r.executeAutomaticReset(ctx, now)

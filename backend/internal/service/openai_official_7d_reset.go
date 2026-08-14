@@ -18,8 +18,9 @@ const (
 )
 
 type OpenAIOfficial7dResetObserver struct {
-	repository   OpenAIOfficial7dResetRepository
-	auditService *AuditLogService
+	repository        OpenAIOfficial7dResetRepository
+	auditService      *AuditLogService
+	detectionNotifier openAIOfficial7dResetDetectionNotifier
 }
 
 func ProvideOpenAIOfficial7dResetObserver(
@@ -59,6 +60,7 @@ func observeOpenAIOfficial7dReset(
 	}
 	if observation.Detected {
 		observer.recordDetectionAudit(accountID, observation, source)
+		observer.notifyDetection(source)
 	}
 	return observation.Detected, nil
 }
