@@ -967,13 +967,14 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 	go func() {
 		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer updateCancel()
-		if observedAt, resetAt, ok := openAIOfficial7dResetTimesFromExtraUpdates(updates, time.Now()); ok {
+		if observedAt, resetAt, windowDuration, ok := openAIOfficial7dResetTimesFromExtraUpdates(updates, time.Now()); ok {
 			if _, err := observeOpenAIOfficial7dReset(
 				updateCtx,
 				s.official7dResetObserver,
 				accountID,
 				observedAt,
 				resetAt,
+				windowDuration,
 				OpenAIOfficial7dResetSourceAccountProbe,
 			); err != nil {
 				slog.Warn("openai official 7d reset probe observation failed", "account_id", accountID, "error", err)

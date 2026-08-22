@@ -164,7 +164,7 @@ func TestClassifyOpenAI7dResetObservation(t *testing.T) {
 		require.False(t, clearPending)
 	})
 
-	t.Run("natural rollover clears stale pending event", func(t *testing.T) {
+	t.Run("natural rollover leaves pending event to round reconciliation", func(t *testing.T) {
 		naturalObservation := oldReset.Add(time.Minute)
 		changed, detected, clearPending := classifyOpenAI7dResetObservation(
 			&oldReset,
@@ -177,7 +177,7 @@ func TestClassifyOpenAI7dResetObservation(t *testing.T) {
 		)
 		require.True(t, changed)
 		require.False(t, detected)
-		require.True(t, clearPending)
+		require.False(t, clearPending)
 	})
 }
 
@@ -235,6 +235,7 @@ func TestClearOpenAIOfficial7dResetPending_RequiresExactDetectedAt(t *testing.T)
 		SetStatus(service.StatusActive).
 		SetCodexOfficialEarlyResetPending(true).
 		SetCodexOfficialEarlyResetDetectedAt(detectedAt).
+		SetExtra(map[string]any{openAI7dResetPendingEvidenceExtraKey: map[string]any{"version": 1}}).
 		Save(ctx)
 	require.NoError(t, err)
 
@@ -255,4 +256,172 @@ func TestClearOpenAIOfficial7dResetPending_RequiresExactDetectedAt(t *testing.T)
 	require.NoError(t, err)
 	require.False(t, updated.CodexOfficialEarlyResetPending)
 	require.Nil(t, updated.CodexOfficialEarlyResetDetectedAt)
+	require.NotContains(t, updated.Extra, openAI7dResetPendingEvidenceExtraKey)
+}
+
+func createOpenAIOfficialResetTestAccount(
+	t *testing.T,
+	client *dbent.Client,
+	name, planType string,
+	subscriptionExpiresAt *time.Time,
+) *dbent.Account {
+	t.Helper()
+	credentials := map[string]any{"plan_type": planType}
+	if subscriptionExpiresAt != nil {
+		credentials["subscription_expires_at"] = subscriptionExpiresAt.UTC().Format(time.RFC3339)
+	}
+	account, err := client.Account.Create().
+		SetName(name).
+		SetPlatform(service.PlatformOpenAI).
+		SetType(service.AccountTypeOAuth).
+		SetStatus(service.StatusActive).
+		SetCredentials(credentials).
+		Save(context.Background())
+	require.NoError(t, err)
+	return account
+}
+
+func TestObserveOpenAI7dReset_RequiresStablePaidSevenDayEvidence(t *testing.T) {
+	repo, client := newOpenAIResetRepoSQLite(t)
+	ctx := context.Background()
+	startedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	expiresAt := startedAt.Add(60 * 24 * time.Hour)
+	first := createOpenAIOfficialResetTestAccount(t, client, "first", "pro", &expiresAt)
+	second := createOpenAIOfficialResetTestAccount(t, client, "second", "plus", &expiresAt)
+
+	observation, err := repo.ObserveOpenAI7dReset(
+		ctx, first.ID, startedAt, startedAt.Add(30*24*time.Hour), 30*24*time.Hour, time.Minute,
+	)
+	require.NoError(t, err)
+	require.False(t, observation.Detected, "a subscription-length window must only rebuild the baseline")
+
+	sevenDayBaselineAt := startedAt.Add(time.Minute)
+	observation, err = repo.ObserveOpenAI7dReset(
+		ctx, first.ID, sevenDayBaselineAt, sevenDayBaselineAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute,
+	)
+	require.NoError(t, err)
+	require.False(t, observation.Detected, "transitioning from a 30-day window to a 7-day window is not an official reset")
+
+	detectedAt := sevenDayBaselineAt.Add(3 * time.Hour)
+	observation, err = repo.ObserveOpenAI7dReset(
+		ctx, first.ID, detectedAt, detectedAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute,
+	)
+	require.NoError(t, err)
+	require.True(t, observation.Detected)
+
+	pending, err := repo.ListPendingOpenAIOfficial7dResets(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.NotNil(t, pending[0].Evidence)
+	require.Equal(t, []int64{first.ID, second.ID}, pending[0].Evidence.EligibleAccountIDs)
+	require.Equal(t, int64((7*24*time.Hour)/time.Second), pending[0].Evidence.WindowSeconds)
+}
+
+func TestObserveOpenAI7dReset_SubscriptionLifecycleChangesRebaseline(t *testing.T) {
+	t.Run("renewal changes expiry", func(t *testing.T) {
+		repo, client := newOpenAIResetRepoSQLite(t)
+		ctx := context.Background()
+		startedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+		firstExpiry := startedAt.Add(30 * 24 * time.Hour)
+		account := createOpenAIOfficialResetTestAccount(t, client, "renewed", "pro", &firstExpiry)
+
+		_, err := repo.ObserveOpenAI7dReset(ctx, account.ID, startedAt, startedAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute)
+		require.NoError(t, err)
+		secondExpiry := firstExpiry.Add(30 * 24 * time.Hour)
+		_, err = client.Account.UpdateOneID(account.ID).SetCredentials(map[string]any{
+			"plan_type":               "pro",
+			"subscription_expires_at": secondExpiry.Format(time.RFC3339),
+		}).Save(ctx)
+		require.NoError(t, err)
+
+		renewalObservedAt := startedAt.Add(3 * time.Hour)
+		observation, err := repo.ObserveOpenAI7dReset(ctx, account.ID, renewalObservedAt, renewalObservedAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute)
+		require.NoError(t, err)
+		require.False(t, observation.Detected)
+
+		stableObservedAt := renewalObservedAt.Add(3 * time.Hour)
+		observation, err = repo.ObserveOpenAI7dReset(ctx, account.ID, stableObservedAt, stableObservedAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute)
+		require.NoError(t, err)
+		require.True(t, observation.Detected)
+	})
+
+	t.Run("new paid subscription", func(t *testing.T) {
+		repo, client := newOpenAIResetRepoSQLite(t)
+		ctx := context.Background()
+		startedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+		account := createOpenAIOfficialResetTestAccount(t, client, "new-subscription", "free", nil)
+		_, err := repo.ObserveOpenAI7dReset(ctx, account.ID, startedAt, startedAt.Add(30*24*time.Hour), 30*24*time.Hour, time.Minute)
+		require.NoError(t, err)
+
+		expiresAt := startedAt.Add(30 * 24 * time.Hour)
+		_, err = client.Account.UpdateOneID(account.ID).SetCredentials(map[string]any{
+			"plan_type":               "pro",
+			"subscription_expires_at": expiresAt.Format(time.RFC3339),
+		}).Save(ctx)
+		require.NoError(t, err)
+		paidObservedAt := startedAt.Add(time.Hour)
+		observation, err := repo.ObserveOpenAI7dReset(ctx, account.ID, paidObservedAt, paidObservedAt.Add(7*24*time.Hour), 7*24*time.Hour, time.Minute)
+		require.NoError(t, err)
+		require.False(t, observation.Detected, "the first paid observation establishes a new subscription baseline")
+	})
+}
+
+func TestListEligibleOpenAIOfficial7dResetCandidates_FiltersUpstreamSubscriptionState(t *testing.T) {
+	repo, client := newOpenAIResetRepoSQLite(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	future := now.Add(time.Hour)
+	past := now.Add(-time.Second)
+	active := createOpenAIOfficialResetTestAccount(t, client, "active", "pro", &future)
+	createOpenAIOfficialResetTestAccount(t, client, "expired", "pro", &past)
+	createOpenAIOfficialResetTestAccount(t, client, "free", "free", nil)
+
+	candidates, err := repo.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
+
+	require.NoError(t, err)
+	require.Equal(t, []service.OpenAIOfficial7dResetCandidate{{AccountID: active.ID}}, candidates)
+}
+
+func TestMarkOpenAIOfficial7dResetRoundHandled_ConsumesOnlyRoundEvents(t *testing.T) {
+	repo, client := newOpenAIResetRepoSQLite(t)
+	ctx := context.Background()
+	detectedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	accounts := make([]*dbent.Account, 0, 3)
+	for i := 1; i <= 3; i++ {
+		account, err := client.Account.Create().
+			SetName(fmt.Sprintf("account-%d", i)).
+			SetPlatform(service.PlatformOpenAI).
+			SetType(service.AccountTypeOAuth).
+			SetStatus(service.StatusActive).
+			SetCodexOfficialEarlyResetPending(true).
+			SetCodexOfficialEarlyResetDetectedAt(detectedAt.Add(time.Duration(i) * time.Minute)).
+			SetExtra(map[string]any{openAI7dResetPendingEvidenceExtraKey: map[string]any{"version": 1}}).
+			Save(ctx)
+		require.NoError(t, err)
+		accounts = append(accounts, account)
+	}
+	events := []service.OpenAIOfficial7dResetState{
+		{AccountID: accounts[0].ID, DetectedAt: detectedAt.Add(time.Minute)},
+		{AccountID: accounts[1].ID, DetectedAt: detectedAt.Add(2 * time.Minute)},
+	}
+	handledAt := detectedAt.Add(time.Hour)
+
+	consumed, err := repo.MarkOpenAIOfficial7dResetRoundHandled(ctx, handledAt, events)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, consumed)
+	for i, account := range accounts {
+		updated, getErr := client.Account.Get(ctx, account.ID)
+		require.NoError(t, getErr)
+		require.NotNil(t, updated.CodexOfficialEarlyResetHandledAt)
+		require.Equal(t, handledAt, *updated.CodexOfficialEarlyResetHandledAt)
+		if i < 2 {
+			require.False(t, updated.CodexOfficialEarlyResetPending)
+			require.Nil(t, updated.CodexOfficialEarlyResetDetectedAt)
+			require.NotContains(t, updated.Extra, openAI7dResetPendingEvidenceExtraKey)
+		} else {
+			require.True(t, updated.CodexOfficialEarlyResetPending)
+			require.Contains(t, updated.Extra, openAI7dResetPendingEvidenceExtraKey)
+		}
+	}
 }

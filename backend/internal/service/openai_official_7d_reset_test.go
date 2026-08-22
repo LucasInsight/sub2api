@@ -12,15 +12,17 @@ type captureOfficial7dResetRepo struct {
 	observedAccountID int64
 	observedAt        time.Time
 	resetAt           time.Time
+	windowDuration    time.Duration
 	grace             time.Duration
 	responses         []OpenAIOfficial7dResetObservation
 	calls             int
 }
 
-func (r *captureOfficial7dResetRepo) ObserveOpenAI7dReset(_ context.Context, accountID int64, observedAt, resetAt time.Time, grace time.Duration) (OpenAIOfficial7dResetObservation, error) {
+func (r *captureOfficial7dResetRepo) ObserveOpenAI7dReset(_ context.Context, accountID int64, observedAt, resetAt time.Time, windowDuration, grace time.Duration) (OpenAIOfficial7dResetObservation, error) {
 	r.observedAccountID = accountID
 	r.observedAt = observedAt
 	r.resetAt = resetAt
+	r.windowDuration = windowDuration
 	r.grace = grace
 	if r.calls < len(r.responses) {
 		response := r.responses[r.calls]
@@ -43,6 +45,10 @@ func (r *captureOfficial7dResetRepo) MarkAllOpenAIOfficial7dResetsHandled(contex
 	return nil
 }
 
+func (r *captureOfficial7dResetRepo) MarkOpenAIOfficial7dResetRoundHandled(context.Context, time.Time, []OpenAIOfficial7dResetState) (int, error) {
+	return 0, nil
+}
+
 func (r *captureOfficial7dResetRepo) ClearOpenAIOfficial7dResetPending(context.Context, int64, time.Time) (bool, error) {
 	return false, nil
 }
@@ -63,6 +69,20 @@ func TestOpenAIQuota7dResetAt_OnlyUsesLongWindow(t *testing.T) {
 	}))
 }
 
+func TestOpenAIQuotaLongResetObservation_PreservesActualSubscriptionWindow(t *testing.T) {
+	observedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	resetAt := observedAt.Add(30 * 24 * time.Hour)
+
+	gotResetAt, windowDuration, ok := openAIQuotaLongResetObservation(&OpenAIRateLimit{
+		PrimaryWindow:   &OpenAIRateLimitWindow{LimitWindowSeconds: int64((5 * time.Hour) / time.Second), ResetAt: observedAt.Add(5 * time.Hour).Unix()},
+		SecondaryWindow: &OpenAIRateLimitWindow{LimitWindowSeconds: int64((30 * 24 * time.Hour) / time.Second), ResetAt: resetAt.Unix()},
+	})
+
+	require.True(t, ok)
+	require.Equal(t, resetAt, gotResetAt)
+	require.Equal(t, 30*24*time.Hour, windowDuration)
+}
+
 func TestObserveOfficial7dReset_PersistsOnlyMainRateLimit7d(t *testing.T) {
 	tracker := &captureOfficial7dResetRepo{}
 	svc := &OpenAIQuotaService{official7dResetObserver: NewOpenAIOfficial7dResetObserver(tracker, nil)}
@@ -80,7 +100,26 @@ func TestObserveOfficial7dReset_PersistsOnlyMainRateLimit7d(t *testing.T) {
 	require.Equal(t, int64(42), tracker.observedAccountID)
 	require.Equal(t, observedAt, tracker.observedAt)
 	require.Equal(t, resetAt, tracker.resetAt)
+	require.Equal(t, 7*24*time.Hour, tracker.windowDuration)
 	require.Equal(t, time.Minute, tracker.grace)
+}
+
+func TestObserveOfficial7dReset_ForwardsThirtyDayWindowAsLifecycleEvidence(t *testing.T) {
+	tracker := &captureOfficial7dResetRepo{}
+	svc := &OpenAIQuotaService{official7dResetObserver: NewOpenAIOfficial7dResetObserver(tracker, nil)}
+	observedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	resetAt := observedAt.Add(30 * 24 * time.Hour)
+
+	svc.observeOfficial7dReset(context.Background(), 42, &OpenAIQuotaUsage{
+		FetchedAt: observedAt.Unix(),
+		RateLimit: &OpenAIRateLimit{
+			PrimaryWindow:   &OpenAIRateLimitWindow{LimitWindowSeconds: int64((5 * time.Hour) / time.Second), ResetAt: observedAt.Add(5 * time.Hour).Unix()},
+			SecondaryWindow: &OpenAIRateLimitWindow{LimitWindowSeconds: int64((30 * 24 * time.Hour) / time.Second), ResetAt: resetAt.Unix()},
+		},
+	}, OpenAIOfficial7dResetSourceQuotaAPI)
+
+	require.Equal(t, resetAt, tracker.resetAt)
+	require.Equal(t, 30*24*time.Hour, tracker.windowDuration)
 }
 
 func TestObserveOpenAIOfficial7dReset_AuditsEachAccountDetectionOnce(t *testing.T) {
@@ -95,12 +134,12 @@ func TestObserveOpenAIOfficial7dReset_AuditsEachAccountDetectionOnce(t *testing.
 	observer := NewOpenAIOfficial7dResetObserver(tracker, auditService)
 
 	detected, err := observeOpenAIOfficial7dReset(
-		context.Background(), observer, 42, observedAt, resetAt, OpenAIOfficial7dResetSourceGatewayHeader,
+		context.Background(), observer, 42, observedAt, resetAt, 7*24*time.Hour, OpenAIOfficial7dResetSourceGatewayHeader,
 	)
 	require.NoError(t, err)
 	require.True(t, detected)
 	detected, err = observeOpenAIOfficial7dReset(
-		context.Background(), observer, 42, observedAt.Add(time.Minute), resetAt, OpenAIOfficial7dResetSourceGatewayHeader,
+		context.Background(), observer, 42, observedAt.Add(time.Minute), resetAt, 7*24*time.Hour, OpenAIOfficial7dResetSourceGatewayHeader,
 	)
 	require.NoError(t, err)
 	require.False(t, detected)
@@ -117,12 +156,23 @@ func TestObserveOpenAIOfficial7dReset_AuditsEachAccountDetectionOnce(t *testing.
 
 func TestOpenAIOfficial7dResetTimesFromExtraUpdates(t *testing.T) {
 	fallback := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
-	observedAt, resetAt, ok := openAIOfficial7dResetTimesFromExtraUpdates(map[string]any{
-		"codex_usage_updated_at": "2026-08-03T09:59:00Z",
-		"codex_7d_reset_at":      "2026-08-10T09:59:00Z",
+	observedAt, resetAt, windowDuration, ok := openAIOfficial7dResetTimesFromExtraUpdates(map[string]any{
+		"codex_usage_updated_at":  "2026-08-03T09:59:00Z",
+		"codex_7d_reset_at":       "2026-08-10T09:59:00Z",
+		"codex_7d_window_minutes": 7 * 24 * 60,
 	}, fallback)
 
 	require.True(t, ok)
 	require.Equal(t, time.Date(2026, 8, 3, 9, 59, 0, 0, time.UTC), observedAt)
 	require.Equal(t, time.Date(2026, 8, 10, 9, 59, 0, 0, time.UTC), resetAt)
+	require.Equal(t, 7*24*time.Hour, windowDuration)
+}
+
+func TestOpenAIOfficial7dResetTimesFromExtraUpdates_RequiresWindowDuration(t *testing.T) {
+	_, _, _, ok := openAIOfficial7dResetTimesFromExtraUpdates(map[string]any{
+		"codex_usage_updated_at": "2026-08-03T09:59:00Z",
+		"codex_7d_reset_at":      "2026-08-10T09:59:00Z",
+	}, time.Now())
+
+	require.False(t, ok)
 }

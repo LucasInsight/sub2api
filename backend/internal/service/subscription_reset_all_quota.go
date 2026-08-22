@@ -132,6 +132,7 @@ type AdminResetAllQuotaStatus struct {
 	LatestDetectedAt          *time.Time                    `json:"latest_detected_at,omitempty"`
 	LastHandledAt             *time.Time                    `json:"last_handled_at,omitempty"`
 	DisabledReason            string                        `json:"disabled_reason,omitempty"`
+	ActiveRound               *OpenAIOfficial7dResetRound   `json:"-"`
 }
 
 type AdminQuotaResetPendingEvent struct {
@@ -147,11 +148,15 @@ type AdminResetAllQuotaResult struct {
 }
 
 func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminResetAllQuotaStatus, error) {
+	return s.statusAt(ctx, time.Now())
+}
+
+func (s *SubscriptionQuotaResetService) statusAt(ctx context.Context, now time.Time) (*AdminResetAllQuotaStatus, error) {
 	lister, tracker, err := s.resetAllQuotaDependencies()
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	now = now.UTC()
 	pending, err := tracker.ListPendingOpenAIOfficial7dResets(ctx)
 	if err != nil {
 		return nil, err
@@ -177,6 +182,13 @@ func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminReset
 		RequiredConfirmationCount: automaticQuotaResetConfirmationRequirement(len(candidates)),
 		PendingEvents:             make([]AdminQuotaResetPendingEvent, 0, len(pending)),
 	}
+	status.ActiveRound, _ = evaluateOpenAIOfficial7dResetRounds(pending, now)
+	if status.ActiveRound != nil {
+		status.EligibleAccountCount = len(status.ActiveRound.EligibleAccountIDs)
+		status.ConfirmationCount = status.ActiveRound.ConfirmationCount
+		status.RequiredConfirmationCount = status.ActiveRound.RequiredConfirmationCount
+		status.AutomaticResetReady = status.ActiveRound.Ready
+	}
 	for i := range pending {
 		status.PendingEvents = append(status.PendingEvents, AdminQuotaResetPendingEvent{
 			AccountID:   pending[i].AccountID,
@@ -190,15 +202,11 @@ func (s *SubscriptionQuotaResetService) Status(ctx context.Context) (*AdminReset
 	}
 	for i := range candidates {
 		candidate := candidates[i]
-		if candidate.Pending {
-			status.ConfirmationCount++
-		}
 		if candidate.HandledAt != nil && (status.LastHandledAt == nil || candidate.HandledAt.After(*status.LastHandledAt)) {
 			handledAt := *candidate.HandledAt
 			status.LastHandledAt = &handledAt
 		}
 	}
-	status.AutomaticResetReady = status.RequiredConfirmationCount > 0 && status.ConfirmationCount >= status.RequiredConfirmationCount
 	if len(active) == 0 {
 		status.DisabledReason = "no_active_subscriptions"
 	} else {
@@ -265,7 +273,7 @@ func (s *SubscriptionQuotaResetService) AdminResetAllQuota(ctx context.Context, 
 	return s.resetAllSubscriptionQuotas(ctx, nil, false)
 }
 
-func (s *SubscriptionQuotaResetService) AutomaticResetAllQuota(ctx context.Context, confirmedAccountIDs []int64) (*AdminResetAllQuotaResult, error) {
+func (s *SubscriptionQuotaResetService) AutomaticResetAllQuota(ctx context.Context, expectedAnchor OpenAIOfficial7dResetState) (*AdminResetAllQuotaResult, error) {
 	enabled, err := s.AutomationEnabled(ctx)
 	if err != nil {
 		return nil, err
@@ -273,12 +281,12 @@ func (s *SubscriptionQuotaResetService) AutomaticResetAllQuota(ctx context.Conte
 	if !enabled {
 		return nil, ErrQuotaResetAutomationDisabled
 	}
-	return s.resetAllSubscriptionQuotas(ctx, confirmedAccountIDs, true)
+	return s.resetAllSubscriptionQuotas(ctx, &expectedAnchor, true)
 }
 
 func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
 	ctx context.Context,
-	confirmedAccountIDs []int64,
+	expectedAnchor *OpenAIOfficial7dResetState,
 	requireAutomaticConfirmation bool,
 ) (*AdminResetAllQuotaResult, error) {
 	lister, tracker, err := s.resetAllQuotaDependencies()
@@ -288,7 +296,9 @@ func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
 	now := time.Now()
 	var active []UserSubscription
 	var pending []OpenAIOfficial7dResetState
+	var confirmedEvents []OpenAIOfficial7dResetState
 	confirmationCount := 0
+	consumedEventCount := 0
 
 	err = s.subscriptionService.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
 		var txErr error
@@ -297,26 +307,14 @@ func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
 			return txErr
 		}
 		if requireAutomaticConfirmation {
-			candidates, candidateErr := tracker.ListEligibleOpenAIOfficial7dResetCandidates(txCtx, now)
-			if candidateErr != nil {
-				return candidateErr
-			}
-			confirmedSet := make(map[int64]struct{}, len(confirmedAccountIDs))
-			for _, accountID := range confirmedAccountIDs {
-				confirmedSet[accountID] = struct{}{}
-			}
-			for i := range candidates {
-				candidate := candidates[i]
-				if !candidate.Pending {
-					continue
-				}
-				if _, ok := confirmedSet[candidate.AccountID]; ok {
-					confirmationCount++
-				}
-			}
-			if confirmationCount < automaticQuotaResetConfirmationRequirement(len(candidates)) {
+			round, _ := evaluateOpenAIOfficial7dResetRounds(pending, now)
+			if round == nil || !round.Ready || expectedAnchor == nil ||
+				round.Anchor.AccountID != expectedAnchor.AccountID ||
+				!round.Anchor.DetectedAt.UTC().Truncate(time.Second).Equal(expectedAnchor.DetectedAt.UTC().Truncate(time.Second)) {
 				return ErrAutomaticQuotaResetPending
 			}
+			confirmedEvents = append([]OpenAIOfficial7dResetState(nil), round.ConfirmedEvents...)
+			confirmationCount = round.ConfirmationCount
 		}
 		active, txErr = lister.ListAllActiveForQuotaReset(txCtx, now)
 		if txErr != nil {
@@ -333,7 +331,13 @@ func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
 			}
 		}
 
-		return tracker.MarkAllOpenAIOfficial7dResetsHandled(txCtx, now)
+		if requireAutomaticConfirmation {
+			consumedEventCount, txErr = tracker.MarkOpenAIOfficial7dResetRoundHandled(txCtx, now, confirmedEvents)
+			return txErr
+		}
+		txErr = tracker.MarkAllOpenAIOfficial7dResetsHandled(txCtx, now)
+		consumedEventCount = len(pending)
+		return txErr
 	})
 	if err != nil {
 		return nil, err
@@ -346,7 +350,7 @@ func (s *SubscriptionQuotaResetService) resetAllSubscriptionQuotas(
 	s.subscriptionService.invalidateQuotaResetCaches(targets)
 	return &AdminResetAllQuotaResult{
 		ResetCount:         len(active),
-		ConsumedEventCount: len(pending),
+		ConsumedEventCount: consumedEventCount,
 		ConfirmationCount:  confirmationCount,
 	}, nil
 }

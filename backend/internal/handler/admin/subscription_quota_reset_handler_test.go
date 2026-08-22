@@ -19,7 +19,7 @@ type quotaResetPendingTrackerStub struct {
 	clearedAt        time.Time
 }
 
-func (r *quotaResetPendingTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration) (service.OpenAIOfficial7dResetObservation, error) {
+func (r *quotaResetPendingTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration, time.Duration) (service.OpenAIOfficial7dResetObservation, error) {
 	return service.OpenAIOfficial7dResetObservation{}, nil
 }
 
@@ -33,6 +33,10 @@ func (r *quotaResetPendingTrackerStub) ListEligibleOpenAIOfficial7dResetCandidat
 
 func (r *quotaResetPendingTrackerStub) MarkAllOpenAIOfficial7dResetsHandled(context.Context, time.Time) error {
 	return nil
+}
+
+func (r *quotaResetPendingTrackerStub) MarkOpenAIOfficial7dResetRoundHandled(context.Context, time.Time, []service.OpenAIOfficial7dResetState) (int, error) {
+	return 0, nil
 }
 
 func (r *quotaResetPendingTrackerStub) ClearOpenAIOfficial7dResetPending(_ context.Context, accountID int64, detectedAt time.Time) (bool, error) {

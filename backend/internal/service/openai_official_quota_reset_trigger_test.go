@@ -31,6 +31,7 @@ func (s *officialQuotaTriggerTrackerStub) ObserveOpenAI7dReset(
 	accountID int64,
 	observedAt, resetAt time.Time,
 	_ time.Duration,
+	_ time.Duration,
 ) (OpenAIOfficial7dResetObservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,12 +63,15 @@ func (s *officialQuotaTriggerTrackerStub) ListPendingOpenAIOfficial7dResets(cont
 		return nil, s.pendingErr
 	}
 	pending := make([]OpenAIOfficial7dResetState, 0, len(s.candidates))
+	eligibleAccountIDs := make([]int64, 0, len(s.candidates))
+	for _, candidate := range s.candidates {
+		eligibleAccountIDs = append(eligibleAccountIDs, candidate.AccountID)
+	}
 	for _, candidate := range s.candidates {
 		if candidate.Pending && candidate.DetectedAt != nil {
-			pending = append(pending, OpenAIOfficial7dResetState{
-				AccountID:  candidate.AccountID,
-				DetectedAt: *candidate.DetectedAt,
-			})
+			event := trustedOfficialResetEvent(candidate.AccountID, *candidate.DetectedAt, eligibleAccountIDs...)
+			event.HandledAt = candidate.HandledAt
+			pending = append(pending, event)
 		}
 	}
 	return pending, nil
@@ -93,6 +97,24 @@ func (s *officialQuotaTriggerTrackerStub) MarkAllOpenAIOfficial7dResetsHandled(_
 		s.candidates[i].HandledAt = &handledAtCopy
 	}
 	return nil
+}
+
+func (s *officialQuotaTriggerTrackerStub) MarkOpenAIOfficial7dResetRoundHandled(_ context.Context, handledAt time.Time, events []OpenAIOfficial7dResetState) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.markHandledCalls++
+	confirmed := make(map[int64]struct{}, len(events))
+	for _, event := range events {
+		confirmed[event.AccountID] = struct{}{}
+	}
+	for i := range s.candidates {
+		if _, ok := confirmed[s.candidates[i].AccountID]; ok {
+			s.candidates[i].Pending = false
+		}
+		handledAtCopy := handledAt
+		s.candidates[i].HandledAt = &handledAtCopy
+	}
+	return len(events), nil
 }
 
 func (s *officialQuotaTriggerTrackerStub) ClearOpenAIOfficial7dResetPending(context.Context, int64, time.Time) (bool, error) {
@@ -134,6 +156,7 @@ func (s *officialQuotaTriggerQuerierStub) QueryUsageSnapshot(ctx context.Context
 		accountID,
 		s.now,
 		s.now.Add(7*24*time.Hour),
+		7*24*time.Hour,
 		OpenAIOfficial7dResetSourcePeriodicProbe,
 	)
 	return &OpenAIQuotaUsage{}, err
@@ -249,10 +272,10 @@ func TestOpenAIOfficialQuotaResetTrigger_ObserverNotifiesEveryDetectionSourceOnc
 			observer := NewOpenAIOfficial7dResetObserver(tracker, nil)
 			observer.setDetectionNotifier(notifier)
 
-			detected, err := observeOpenAIOfficial7dReset(context.Background(), observer, 42, now, now.Add(7*24*time.Hour), source)
+			detected, err := observeOpenAIOfficial7dReset(context.Background(), observer, 42, now, now.Add(7*24*time.Hour), 7*24*time.Hour, source)
 			require.NoError(t, err)
 			require.True(t, detected)
-			detected, err = observeOpenAIOfficial7dReset(context.Background(), observer, 42, now.Add(time.Minute), now.Add(7*24*time.Hour), source)
+			detected, err = observeOpenAIOfficial7dReset(context.Background(), observer, 42, now.Add(time.Minute), now.Add(7*24*time.Hour), 7*24*time.Hour, source)
 			require.NoError(t, err)
 			require.False(t, detected)
 			require.Equal(t, []OpenAIOfficial7dResetObservationSource{source}, notifier.sources)
@@ -267,7 +290,7 @@ func TestOpenAIOfficialQuotaResetTrigger_ObservationErrorDoesNotNotify(t *testin
 	observer.setDetectionNotifier(notifier)
 	now := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
 
-	detected, err := observeOpenAIOfficial7dReset(context.Background(), observer, 42, now, now.Add(7*24*time.Hour), OpenAIOfficial7dResetSourceGatewayHeader)
+	detected, err := observeOpenAIOfficial7dReset(context.Background(), observer, 42, now, now.Add(7*24*time.Hour), 7*24*time.Hour, OpenAIOfficial7dResetSourceGatewayHeader)
 
 	require.EqualError(t, err, "observe failed")
 	require.False(t, detected)
@@ -281,7 +304,7 @@ func TestOpenAIOfficialQuotaResetTrigger_InvalidObservationAndNilHooksAreNoops(t
 	nilObserver.setDetectionNotifier(notifier)
 
 	detected, err := observeOpenAIOfficial7dReset(
-		context.Background(), nil, 42, now, now.Add(7*24*time.Hour), OpenAIOfficial7dResetSourceGatewayHeader,
+		context.Background(), nil, 42, now, now.Add(7*24*time.Hour), 7*24*time.Hour, OpenAIOfficial7dResetSourceGatewayHeader,
 	)
 	require.NoError(t, err)
 	require.False(t, detected)
@@ -314,7 +337,7 @@ func TestOpenAIOfficialQuotaResetTrigger_PassiveDetectionImmediatelyProbesThreeO
 	now := harness.querier.now
 
 	detected, err := observeOpenAIOfficial7dReset(
-		context.Background(), harness.observer, 1, now, now.Add(7*24*time.Hour), OpenAIOfficial7dResetSourceGatewayHeader,
+		context.Background(), harness.observer, 1, now, now.Add(7*24*time.Hour), 7*24*time.Hour, OpenAIOfficial7dResetSourceGatewayHeader,
 	)
 	require.NoError(t, err)
 	require.True(t, detected)
@@ -392,7 +415,7 @@ func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchCandidateFailureStopsCyc
 func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchStatusFailureStopsCycle(t *testing.T) {
 	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true}, false, time.Hour)
 	harness.tracker.pendingErr = errors.New("refreshed status failed")
-	harness.tracker.pendingErrCall = 3
+	harness.tracker.pendingErrCall = 4
 
 	err := harness.runner.RunOnce(context.Background())
 

@@ -17,7 +17,7 @@ type quotaProbeSwitchTrackerStub struct {
 	pendingErr error
 }
 
-func (s *quotaProbeSwitchTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration) (OpenAIOfficial7dResetObservation, error) {
+func (s *quotaProbeSwitchTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration, time.Duration) (OpenAIOfficial7dResetObservation, error) {
 	return OpenAIOfficial7dResetObservation{}, nil
 }
 
@@ -26,12 +26,15 @@ func (s *quotaProbeSwitchTrackerStub) ListPendingOpenAIOfficial7dResets(context.
 		return nil, s.pendingErr
 	}
 	pending := make([]OpenAIOfficial7dResetState, 0, len(s.candidates))
+	eligibleAccountIDs := make([]int64, 0, len(s.candidates))
+	for _, candidate := range s.candidates {
+		eligibleAccountIDs = append(eligibleAccountIDs, candidate.AccountID)
+	}
 	for _, candidate := range s.candidates {
 		if candidate.Pending && candidate.DetectedAt != nil {
-			pending = append(pending, OpenAIOfficial7dResetState{
-				AccountID:  candidate.AccountID,
-				DetectedAt: *candidate.DetectedAt,
-			})
+			event := trustedOfficialResetEvent(candidate.AccountID, *candidate.DetectedAt, eligibleAccountIDs...)
+			event.HandledAt = candidate.HandledAt
+			pending = append(pending, event)
 		}
 	}
 	return pending, nil
@@ -51,7 +54,32 @@ func (s *quotaProbeSwitchTrackerStub) MarkAllOpenAIOfficial7dResetsHandled(_ con
 	return nil
 }
 
-func (s *quotaProbeSwitchTrackerStub) ClearOpenAIOfficial7dResetPending(context.Context, int64, time.Time) (bool, error) {
+func (s *quotaProbeSwitchTrackerStub) MarkOpenAIOfficial7dResetRoundHandled(_ context.Context, handledAt time.Time, events []OpenAIOfficial7dResetState) (int, error) {
+	s.handled = true
+	consumed := make(map[int64]struct{}, len(events))
+	for _, event := range events {
+		consumed[event.AccountID] = struct{}{}
+	}
+	for i := range s.candidates {
+		if _, ok := consumed[s.candidates[i].AccountID]; ok {
+			s.candidates[i].Pending = false
+			s.candidates[i].DetectedAt = nil
+		}
+		handledAtCopy := handledAt
+		s.candidates[i].HandledAt = &handledAtCopy
+	}
+	return len(events), nil
+}
+
+func (s *quotaProbeSwitchTrackerStub) ClearOpenAIOfficial7dResetPending(_ context.Context, accountID int64, detectedAt time.Time) (bool, error) {
+	for i := range s.candidates {
+		candidate := &s.candidates[i]
+		if candidate.AccountID == accountID && candidate.Pending && candidate.DetectedAt != nil && candidate.DetectedAt.Equal(detectedAt) {
+			candidate.Pending = false
+			candidate.DetectedAt = nil
+			return true, nil
+		}
+	}
 	return false, nil
 }
 

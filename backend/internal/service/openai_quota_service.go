@@ -384,12 +384,12 @@ func (s *OpenAIQuotaService) observeOfficial7dReset(
 	if s == nil || s.official7dResetObserver == nil || usage == nil {
 		return
 	}
-	resetAt := openAIQuota7dResetAt(usage.RateLimit)
-	if resetAt == nil {
+	resetAt, windowDuration, ok := openAIQuotaLongResetObservation(usage.RateLimit)
+	if !ok {
 		return
 	}
 	observedAt := time.Unix(usage.FetchedAt, 0).UTC()
-	detected, err := observeOpenAIOfficial7dReset(ctx, s.official7dResetObserver, accountID, observedAt, *resetAt, source)
+	detected, err := observeOpenAIOfficial7dReset(ctx, s.official7dResetObserver, accountID, observedAt, resetAt, windowDuration, source)
 	if err != nil {
 		slog.Warn("openai_official_7d_reset_observation_failed", "account_id", accountID, "error", err)
 		return
@@ -397,6 +397,25 @@ func (s *OpenAIQuotaService) observeOfficial7dReset(
 	if detected {
 		slog.Info("openai_7d_early_reset_detected", "account_id", accountID, "reset_at", resetAt.Format(time.RFC3339))
 	}
+}
+
+func openAIQuotaLongResetObservation(rateLimit *OpenAIRateLimit) (time.Time, time.Duration, bool) {
+	if rateLimit == nil {
+		return time.Time{}, 0, false
+	}
+	var selected *OpenAIRateLimitWindow
+	for _, window := range []*OpenAIRateLimitWindow{rateLimit.PrimaryWindow, rateLimit.SecondaryWindow} {
+		if window == nil || window.ResetAt <= 0 || window.LimitWindowSeconds <= int64((6*time.Hour)/time.Second) {
+			continue
+		}
+		if selected == nil || window.LimitWindowSeconds > selected.LimitWindowSeconds {
+			selected = window
+		}
+	}
+	if selected == nil {
+		return time.Time{}, 0, false
+	}
+	return time.Unix(selected.ResetAt, 0).UTC(), time.Duration(selected.LimitWindowSeconds) * time.Second, true
 }
 
 func openAIQuota7dResetAt(rateLimit *OpenAIRateLimit) *time.Time {

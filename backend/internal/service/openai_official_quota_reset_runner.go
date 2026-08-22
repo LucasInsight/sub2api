@@ -20,6 +20,7 @@ const (
 	openAIOfficialQuotaResetProbeTimeout  = 20 * time.Second
 	openAIOfficialQuotaResetMaxProbeCount = 3
 	openAIOfficialAutoResetAuditAction    = "system.openai.quota.auto_reset_executed"
+	openAIOfficialExpiredAuditAction      = "system.openai.quota.observation_expired"
 )
 
 type OpenAIQuotaUsageQuerier interface {
@@ -178,17 +179,23 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	defer release()
 
 	now := r.now()
-	status, err := r.quotaResetService.Status(ctx)
+	if err := r.reconcileExpiredRounds(ctx, now); err != nil {
+		return err
+	}
+	status, err := r.quotaResetService.statusAt(ctx, now)
 	if err != nil {
 		return err
 	}
-	if status.ActiveSubscriptionCount == 0 || status.EligibleAccountCount == 0 {
+	if status.ActiveSubscriptionCount == 0 {
 		return nil
 	}
 	if status.AutomaticResetReady {
-		if status.AutoResetEnabled {
-			return r.executeAutomaticReset(ctx, now)
+		if status.AutoResetEnabled && status.ActiveRound != nil {
+			return r.executeAutomaticReset(ctx, now, status.ActiveRound)
 		}
+		return nil
+	}
+	if status.ActiveRound == nil && status.EligibleAccountCount == 0 {
 		return nil
 	}
 
@@ -198,9 +205,9 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 	}
 	r.resetPeriodicProbeDetection()
 	defer r.resetPeriodicProbeDetection()
-	attempted := r.probeCandidateBatch(ctx, r.nextProbeCandidates(candidates))
+	attempted := r.probeCandidateBatch(ctx, r.nextProbeCandidates(filterOpenAIQuotaResetRoundCandidates(candidates, status.ActiveRound)))
 
-	refreshed, err := r.quotaResetService.Status(ctx)
+	refreshed, err := r.quotaResetService.statusAt(ctx, now)
 	if err != nil {
 		return err
 	}
@@ -214,33 +221,30 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 		if candidateErr != nil {
 			return candidateErr
 		}
-		additional := r.nextUnprobedCandidates(refreshedCandidates, attempted)
+		additional := r.nextUnprobedCandidates(filterOpenAIQuotaResetRoundCandidates(refreshedCandidates, refreshed.ActiveRound), attempted)
 		if len(additional) > 0 {
 			r.probeCandidateBatch(ctx, additional)
-			refreshed, err = r.quotaResetService.Status(ctx)
+			refreshed, err = r.quotaResetService.statusAt(ctx, now)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	if refreshed.AutomaticResetReady && refreshed.AutoResetEnabled {
-		return r.executeAutomaticReset(ctx, now)
+	if refreshed.AutomaticResetReady && refreshed.AutoResetEnabled && refreshed.ActiveRound != nil {
+		return r.executeAutomaticReset(ctx, now, refreshed.ActiveRound)
 	}
 	return nil
 }
 
-func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Context, now time.Time) error {
-	candidates, err := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
-	if err != nil {
-		return err
+func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Context, now time.Time, round *OpenAIOfficial7dResetRound) error {
+	if round == nil || !round.Ready {
+		return ErrAutomaticQuotaResetPending
 	}
-	confirmedAccountIDs := make([]int64, 0, len(candidates))
-	for i := range candidates {
-		if candidates[i].Pending {
-			confirmedAccountIDs = append(confirmedAccountIDs, candidates[i].AccountID)
-		}
+	confirmedAccountIDs := make([]int64, 0, len(round.ConfirmedEvents))
+	for _, event := range round.ConfirmedEvents {
+		confirmedAccountIDs = append(confirmedAccountIDs, event.AccountID)
 	}
-	result, err := r.quotaResetService.AutomaticResetAllQuota(ctx, confirmedAccountIDs)
+	result, err := r.quotaResetService.AutomaticResetAllQuota(ctx, round.Anchor)
 	if err != nil {
 		return err
 	}
@@ -251,6 +255,80 @@ func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Conte
 		"reset_count", result.ResetCount,
 	)
 	return nil
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) reconcileExpiredRounds(ctx context.Context, now time.Time) error {
+	for {
+		pending, err := r.tracker.ListPendingOpenAIOfficial7dResets(ctx)
+		if err != nil {
+			return err
+		}
+		_, expired := evaluateOpenAIOfficial7dResetRounds(pending, now)
+		if len(expired) == 0 {
+			return nil
+		}
+		oldest := expired[0]
+		cleared, err := r.tracker.ClearOpenAIOfficial7dResetPending(ctx, oldest.AccountID, oldest.DetectedAt)
+		if err != nil {
+			return err
+		}
+		if cleared {
+			r.recordExpiredObservationAudit(now, oldest)
+		} else {
+			return nil
+		}
+		// Re-read after every CAS clear. A concurrent manual action or a newly
+		// arrived event may have changed which pending event is the oldest anchor.
+	}
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) recordExpiredObservationAudit(now time.Time, event OpenAIOfficial7dResetState) {
+	if r == nil || r.auditService == nil {
+		return
+	}
+	r.auditService.Record(&AuditLog{
+		CreatedAt:  now.UTC(),
+		ActorEmail: "system",
+		ActorRole:  "system",
+		AuthMethod: "system",
+		Action:     openAIOfficialExpiredAuditAction,
+		Method:     "SYSTEM",
+		Path:       "/internal/openai-official-quota-reset/reconcile",
+		StatusCode: http.StatusOK,
+		Extra: map[string]any{
+			"account_id":  event.AccountID,
+			"detected_at": event.DetectedAt.UTC().Format(time.RFC3339),
+			"result":      "expired",
+		},
+	})
+}
+
+func filterOpenAIQuotaResetRoundCandidates(
+	candidates []OpenAIOfficial7dResetCandidate,
+	round *OpenAIOfficial7dResetRound,
+) []OpenAIOfficial7dResetCandidate {
+	if round == nil {
+		return candidates
+	}
+	eligible := make(map[int64]struct{}, len(round.EligibleAccountIDs))
+	for _, accountID := range round.EligibleAccountIDs {
+		eligible[accountID] = struct{}{}
+	}
+	confirmed := make(map[int64]struct{}, len(round.ConfirmedEvents))
+	for _, event := range round.ConfirmedEvents {
+		confirmed[event.AccountID] = struct{}{}
+	}
+	filtered := make([]OpenAIOfficial7dResetCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := eligible[candidate.AccountID]; !ok {
+			continue
+		}
+		if _, ok := confirmed[candidate.AccountID]; ok {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) recordAutomaticResetAudit(

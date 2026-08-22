@@ -57,6 +57,21 @@ type OpenAIOfficial7dResetState struct {
 	AccountID   int64
 	AccountName string
 	DetectedAt  time.Time
+	HandledAt   *time.Time
+	Evidence    *OpenAIOfficial7dResetEvidence
+}
+
+// OpenAIOfficial7dResetEvidence is versioned evidence persisted with a pending
+// event. EligibleAccountIDs is the membership snapshot captured by the first
+// observation source before a confirmation round starts.
+type OpenAIOfficial7dResetEvidence struct {
+	Version               int        `json:"version"`
+	ObservedAt            time.Time  `json:"observed_at"`
+	ResetAt               time.Time  `json:"reset_at"`
+	WindowSeconds         int64      `json:"window_seconds"`
+	PlanType              string     `json:"plan_type"`
+	SubscriptionExpiresAt *time.Time `json:"subscription_expires_at,omitempty"`
+	EligibleAccountIDs    []int64    `json:"eligible_account_ids,omitempty"`
 }
 
 type OpenAIOfficial7dResetObservation struct {
@@ -79,9 +94,10 @@ type OpenAIOfficial7dResetCandidate struct {
 // OpenAIOfficial7dResetRepository persists authoritative 7d window
 // observations and coordinates consumption of pending early-reset events.
 type OpenAIOfficial7dResetRepository interface {
-	ObserveOpenAI7dReset(ctx context.Context, accountID int64, observedAt, resetAt time.Time, boundaryGrace time.Duration) (OpenAIOfficial7dResetObservation, error)
+	ObserveOpenAI7dReset(ctx context.Context, accountID int64, observedAt, resetAt time.Time, windowDuration, boundaryGrace time.Duration) (OpenAIOfficial7dResetObservation, error)
 	ListPendingOpenAIOfficial7dResets(ctx context.Context) ([]OpenAIOfficial7dResetState, error)
 	ListEligibleOpenAIOfficial7dResetCandidates(ctx context.Context, now time.Time) ([]OpenAIOfficial7dResetCandidate, error)
 	MarkAllOpenAIOfficial7dResetsHandled(ctx context.Context, handledAt time.Time) error
+	MarkOpenAIOfficial7dResetRoundHandled(ctx context.Context, handledAt time.Time, events []OpenAIOfficial7dResetState) (int, error)
 	ClearOpenAIOfficial7dResetPending(ctx context.Context, accountID int64, detectedAt time.Time) (bool, error)
 }

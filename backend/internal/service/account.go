@@ -1269,6 +1269,42 @@ func (a *Account) IsOpenAIChatGPTSubscription() bool {
 	}
 }
 
+// OpenAIChatGPTSubscriptionIdentity returns the upstream subscription identity
+// used by official quota-reset detection. An explicit but invalid or expired
+// subscription expiry is treated as inactive so account lifecycle changes
+// cannot masquerade as an official reset.
+type OpenAIChatGPTSubscriptionIdentity struct {
+	PlanType              string     `json:"plan_type"`
+	SubscriptionExpiresAt *time.Time `json:"subscription_expires_at,omitempty"`
+}
+
+func (a *Account) OpenAIChatGPTSubscriptionIdentity(at time.Time) (OpenAIChatGPTSubscriptionIdentity, bool) {
+	if a == nil || !a.IsOpenAIOAuth() {
+		return OpenAIChatGPTSubscriptionIdentity{}, false
+	}
+	planType := strings.ToLower(strings.TrimSpace(a.GetCredential("plan_type")))
+	switch planType {
+	case "", "free", "abnormal":
+		return OpenAIChatGPTSubscriptionIdentity{}, false
+	}
+
+	identity := OpenAIChatGPTSubscriptionIdentity{PlanType: planType}
+	rawExpiry, hasExpiry := a.Credentials["subscription_expires_at"]
+	if !hasExpiry || rawExpiry == nil || strings.TrimSpace(a.GetCredential("subscription_expires_at")) == "" {
+		return identity, true
+	}
+	expiresAt := a.GetCredentialAsTime("subscription_expires_at")
+	if expiresAt == nil {
+		return OpenAIChatGPTSubscriptionIdentity{}, false
+	}
+	normalizedExpiry := expiresAt.UTC().Truncate(time.Second)
+	if !at.UTC().Truncate(time.Second).Before(normalizedExpiry) {
+		return OpenAIChatGPTSubscriptionIdentity{}, false
+	}
+	identity.SubscriptionExpiresAt = &normalizedExpiry
+	return identity, true
+}
+
 func (a *Account) IsOpenAIPersonalAccessToken() bool {
 	if !a.IsOpenAIOAuth() {
 		return false

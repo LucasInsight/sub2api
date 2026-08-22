@@ -16,18 +16,24 @@ type automaticResetTrackerStub struct {
 	handled    bool
 }
 
-func (r *automaticResetTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration) (OpenAIOfficial7dResetObservation, error) {
+func (r *automaticResetTrackerStub) ObserveOpenAI7dReset(context.Context, int64, time.Time, time.Time, time.Duration, time.Duration) (OpenAIOfficial7dResetObservation, error) {
 	return OpenAIOfficial7dResetObservation{}, nil
 }
 
 func (r *automaticResetTrackerStub) ListPendingOpenAIOfficial7dResets(context.Context) ([]OpenAIOfficial7dResetState, error) {
 	pending := make([]OpenAIOfficial7dResetState, 0, len(r.candidates))
+	eligibleAccountIDs := make([]int64, 0, len(r.candidates))
+	for _, candidate := range r.candidates {
+		eligibleAccountIDs = append(eligibleAccountIDs, candidate.AccountID)
+	}
 	for i := range r.candidates {
 		candidate := r.candidates[i]
 		if !candidate.Pending || candidate.DetectedAt == nil {
 			continue
 		}
-		pending = append(pending, OpenAIOfficial7dResetState{AccountID: candidate.AccountID, DetectedAt: *candidate.DetectedAt})
+		event := trustedOfficialResetEvent(candidate.AccountID, *candidate.DetectedAt, eligibleAccountIDs...)
+		event.HandledAt = candidate.HandledAt
+		pending = append(pending, event)
 	}
 	return pending, nil
 }
@@ -46,7 +52,32 @@ func (r *automaticResetTrackerStub) MarkAllOpenAIOfficial7dResetsHandled(_ conte
 	return nil
 }
 
-func (r *automaticResetTrackerStub) ClearOpenAIOfficial7dResetPending(context.Context, int64, time.Time) (bool, error) {
+func (r *automaticResetTrackerStub) MarkOpenAIOfficial7dResetRoundHandled(_ context.Context, handledAt time.Time, events []OpenAIOfficial7dResetState) (int, error) {
+	r.handled = true
+	consumed := make(map[int64]struct{}, len(events))
+	for _, event := range events {
+		consumed[event.AccountID] = struct{}{}
+	}
+	for i := range r.candidates {
+		if _, ok := consumed[r.candidates[i].AccountID]; ok {
+			r.candidates[i].Pending = false
+			r.candidates[i].DetectedAt = nil
+		}
+		handled := handledAt
+		r.candidates[i].HandledAt = &handled
+	}
+	return len(events), nil
+}
+
+func (r *automaticResetTrackerStub) ClearOpenAIOfficial7dResetPending(_ context.Context, accountID int64, detectedAt time.Time) (bool, error) {
+	for i := range r.candidates {
+		candidate := &r.candidates[i]
+		if candidate.AccountID == accountID && candidate.Pending && candidate.DetectedAt != nil && candidate.DetectedAt.Equal(detectedAt) {
+			candidate.Pending = false
+			candidate.DetectedAt = nil
+			return true, nil
+		}
+	}
 	return false, nil
 }
 
@@ -273,8 +304,40 @@ func TestOpenAIOfficialQuotaResetRunner_RotatesPastFailedAccounts(t *testing.T) 
 	require.NoError(t, runner.RunOnce(context.Background()))
 	require.Equal(t, []int64{1, 2, 3, 4, 1, 2}, querier.queried)
 
-	status, err := quotaResetService.Status(context.Background())
+	status, err := quotaResetService.statusAt(context.Background(), now)
 	require.NoError(t, err)
 	require.Equal(t, 1, status.ConfirmationCount)
 	require.False(t, status.AutomaticResetReady)
+}
+
+func TestOpenAIOfficialQuotaResetRunner_ExpiresOnlyOldestAndStartsAtBoundaryEvent(t *testing.T) {
+	startedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	boundary := startedAt.Add(3 * time.Hour)
+	tracker := &automaticResetTrackerStub{candidates: []OpenAIOfficial7dResetCandidate{
+		{AccountID: 1, Pending: true, DetectedAt: &startedAt},
+		{AccountID: 2, Pending: true, DetectedAt: &boundary},
+	}}
+	runner := &OpenAIOfficialQuotaResetRunner{tracker: tracker, auditService: NewAuditLogService(nil, nil)}
+
+	require.NoError(t, runner.reconcileExpiredRounds(context.Background(), boundary))
+	require.False(t, tracker.candidates[0].Pending)
+	require.True(t, tracker.candidates[1].Pending)
+	require.Len(t, runner.auditService.queue, 1)
+	entry := <-runner.auditService.queue
+	require.Equal(t, openAIOfficialExpiredAuditAction, entry.Action)
+	require.Equal(t, int64(1), entry.Extra["account_id"])
+}
+
+func TestOpenAIOfficialQuotaResetRunner_DoesNotExpireReadyRoundAfterDeadline(t *testing.T) {
+	startedAt := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	confirmedAt := startedAt.Add(time.Hour)
+	tracker := &automaticResetTrackerStub{candidates: []OpenAIOfficial7dResetCandidate{
+		{AccountID: 1, Pending: true, DetectedAt: &startedAt},
+		{AccountID: 2, Pending: true, DetectedAt: &confirmedAt},
+	}}
+	runner := &OpenAIOfficialQuotaResetRunner{tracker: tracker}
+
+	require.NoError(t, runner.reconcileExpiredRounds(context.Background(), startedAt.Add(24*time.Hour)))
+	require.True(t, tracker.candidates[0].Pending)
+	require.True(t, tracker.candidates[1].Pending)
 }
