@@ -10,17 +10,34 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 )
 
 const (
-	openAIOfficialQuotaResetInterval      = 5 * time.Minute
+	openAIOfficialQuotaResetCronSchedule  = "*/5 * * * *"
+	openAIOfficialQuotaResetLogComponent  = "service.openai_official_quota_reset"
 	openAIOfficialQuotaResetLockKey       = "subscription:openai-official-quota-reset:leader"
 	openAIOfficialQuotaResetLockTTL       = 3 * time.Minute
 	openAIOfficialQuotaResetCycleTimeout  = 90 * time.Second
 	openAIOfficialQuotaResetProbeTimeout  = 20 * time.Second
+	openAIOfficialQuotaResetStopTimeout   = 3 * time.Second
 	openAIOfficialQuotaResetMaxProbeCount = 3
 	openAIOfficialAutoResetAuditAction    = "system.openai.quota.auto_reset_executed"
 	openAIOfficialExpiredAuditAction      = "system.openai.quota.observation_expired"
+)
+
+var openAIOfficialQuotaResetCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+const (
+	openAIOfficialQuotaResetCycleOutcomeFailed                  = "failed"
+	openAIOfficialQuotaResetCycleOutcomeLeaderLockNotAcquired   = "leader_lock_not_acquired"
+	openAIOfficialQuotaResetCycleOutcomeNoActiveSubscriptions   = "no_active_subscriptions"
+	openAIOfficialQuotaResetCycleOutcomeNoEligibleAccounts      = "no_eligible_accounts"
+	openAIOfficialQuotaResetCycleOutcomeNoUnconfirmedCandidates = "no_unconfirmed_candidates"
+	openAIOfficialQuotaResetCycleOutcomeProbed                  = "probed"
+	openAIOfficialQuotaResetCycleOutcomeReadyAutoResetDisabled  = "ready_auto_reset_disabled"
+	openAIOfficialQuotaResetCycleOutcomeAutomaticResetExecuted  = "automatic_reset_executed"
+	openAIOfficialQuotaResetCycleOutcomeDependenciesUnavailable = "dependencies_unavailable"
 )
 
 type OpenAIQuotaUsageQuerier interface {
@@ -34,7 +51,7 @@ type OpenAIOfficialQuotaResetRunner struct {
 	quotaQuerier      OpenAIQuotaUsageQuerier
 	quotaResetService *SubscriptionQuotaResetService
 	auditService      *AuditLogService
-	interval          time.Duration
+	schedule          string
 	now               func() time.Time
 
 	lockCache  LeaderLockCache
@@ -44,7 +61,7 @@ type OpenAIOfficialQuotaResetRunner struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	mu                   sync.Mutex
-	wg                   sync.WaitGroup
+	cron                 *cron.Cron
 	started              bool
 	stopped              bool
 	runMutex             sync.Mutex
@@ -56,14 +73,17 @@ func NewOpenAIOfficialQuotaResetRunner(
 	tracker OpenAIOfficial7dResetRepository,
 	quotaQuerier OpenAIQuotaUsageQuerier,
 	quotaResetService *SubscriptionQuotaResetService,
-	interval time.Duration,
+	schedule string,
 ) *OpenAIOfficialQuotaResetRunner {
+	if schedule == "" {
+		schedule = openAIOfficialQuotaResetCronSchedule
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &OpenAIOfficialQuotaResetRunner{
 		tracker:           tracker,
 		quotaQuerier:      quotaQuerier,
 		quotaResetService: quotaResetService,
-		interval:          interval,
+		schedule:          schedule,
 		now:               time.Now,
 		instanceID:        uuid.NewString(),
 		ctx:               ctx,
@@ -86,7 +106,7 @@ func ProvideOpenAIOfficialQuotaResetRunner(
 		tracker,
 		quotaService,
 		quotaResetService,
-		openAIOfficialQuotaResetInterval,
+		openAIOfficialQuotaResetCronSchedule,
 	)
 	runner.SetLeaderLock(lockCache, db)
 	runner.auditService = auditService
@@ -104,18 +124,30 @@ func (r *OpenAIOfficialQuotaResetRunner) SetLeaderLock(lockCache LeaderLockCache
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) Start() {
-	if r == nil || r.tracker == nil || r.quotaQuerier == nil || r.quotaResetService == nil || r.interval <= 0 {
+	if r == nil || r.tracker == nil || r.quotaQuerier == nil || r.quotaResetService == nil || r.schedule == "" {
 		return
 	}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.started || r.stopped {
-		r.mu.Unlock()
 		return
 	}
+	scheduler := cron.New(cron.WithParser(openAIOfficialQuotaResetCronParser), cron.WithLocation(time.Local))
+	if _, err := scheduler.AddFunc(r.schedule, r.runScheduledCycle); err != nil {
+		slog.Error("openai official quota reset cron start failed",
+			"component", openAIOfficialQuotaResetLogComponent,
+			"schedule", r.schedule,
+			"error", err,
+		)
+		return
+	}
+	r.cron = scheduler
 	r.started = true
-	r.wg.Add(1)
-	r.mu.Unlock()
-	go r.runLoop()
+	scheduler.Start()
+	slog.Info("openai official quota reset cron scheduled",
+		"component", openAIOfficialQuotaResetLogComponent,
+		"schedule", r.schedule,
+	)
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) Stop() {
@@ -129,38 +161,95 @@ func (r *OpenAIOfficialQuotaResetRunner) Stop() {
 	}
 	r.stopped = true
 	r.cancel()
+	scheduler := r.cron
+	r.cron = nil
 	r.mu.Unlock()
-	r.wg.Wait()
-}
-
-func (r *OpenAIOfficialQuotaResetRunner) runLoop() {
-	defer r.wg.Done()
-	r.runCycle()
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.ctx.Done():
-			return
-		case <-ticker.C:
-			r.runCycle()
-		case <-r.immediateProbeWakeChannel():
-			r.runTriggeredCycle()
-		}
+	if scheduler == nil {
+		return
+	}
+	stopped := scheduler.Stop()
+	select {
+	case <-stopped.Done():
+	case <-time.After(openAIOfficialQuotaResetStopTimeout):
+		slog.Warn("openai official quota reset cron stop timed out",
+			"component", openAIOfficialQuotaResetLogComponent,
+			"schedule", r.schedule,
+		)
 	}
 }
 
-func (r *OpenAIOfficialQuotaResetRunner) runCycle() {
+type openAIOfficialQuotaResetCycleResult struct {
+	Outcome                   string
+	LeaderAcquired            bool
+	ActiveSubscriptionCount   int
+	EligibleAccountCount      int
+	ProbeAttemptedCount       int
+	ProbeSucceededCount       int
+	ProbeFailedCount          int
+	ConfirmationCount         int
+	RequiredConfirmationCount int
+	AutomaticResetReady       bool
+	AutoResetEnabled          bool
+	ResetCount                int
+	ConsumedEventCount        int
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) runScheduledCycle() {
+	triggeredAt := time.Now().UTC()
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(r.ctx, openAIOfficialQuotaResetCycleTimeout)
 	defer cancel()
-	if err := r.RunOnce(ctx); err != nil {
-		slog.Warn("openai official quota reset cycle failed", "error", err)
+	result, err := r.runOnce(ctx)
+	r.recordCycleSummary(triggeredAt, time.Since(startedAt), result, err)
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) recordCycleSummary(
+	triggeredAt time.Time,
+	duration time.Duration,
+	result openAIOfficialQuotaResetCycleResult,
+	err error,
+) {
+	outcome := result.Outcome
+	if err != nil {
+		outcome = openAIOfficialQuotaResetCycleOutcomeFailed
 	}
+	fields := []any{
+		"component", openAIOfficialQuotaResetLogComponent,
+		"trigger", "cron",
+		"schedule", r.schedule,
+		"triggered_at", triggeredAt.UTC().Format(time.RFC3339Nano),
+		"outcome", outcome,
+		"leader_acquired", result.LeaderAcquired,
+		"active_subscription_count", result.ActiveSubscriptionCount,
+		"eligible_account_count", result.EligibleAccountCount,
+		"probe_attempted_count", result.ProbeAttemptedCount,
+		"probe_succeeded_count", result.ProbeSucceededCount,
+		"probe_failed_count", result.ProbeFailedCount,
+		"confirmation_count", result.ConfirmationCount,
+		"required_confirmation_count", result.RequiredConfirmationCount,
+		"automatic_reset_ready", result.AutomaticResetReady,
+		"auto_reset_enabled", result.AutoResetEnabled,
+		"reset_count", result.ResetCount,
+		"consumed_event_count", result.ConsumedEventCount,
+		"duration_ms", duration.Milliseconds(),
+	}
+	if err != nil {
+		fields = append(fields, "error", err)
+		slog.Warn("openai official quota reset cron cycle completed", fields...)
+		return
+	}
+	slog.Info("openai official quota reset cron cycle completed", fields...)
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
+	_, err := r.runOnce(ctx)
+	return err
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) runOnce(ctx context.Context) (openAIOfficialQuotaResetCycleResult, error) {
+	result := openAIOfficialQuotaResetCycleResult{Outcome: openAIOfficialQuotaResetCycleOutcomeDependenciesUnavailable}
 	if r == nil || r.tracker == nil || r.quotaQuerier == nil || r.quotaResetService == nil {
-		return nil
+		return result, nil
 	}
 	r.runMutex.Lock()
 	defer r.runMutex.Unlock()
@@ -174,43 +263,56 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 		openAIOfficialQuotaResetLockTTL,
 	)
 	if !acquired {
-		return nil
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeLeaderLockNotAcquired
+		return result, nil
 	}
+	result.LeaderAcquired = true
 	defer release()
 
 	now := r.now()
 	if err := r.reconcileExpiredRounds(ctx, now); err != nil {
-		return err
+		return result, err
 	}
 	status, err := r.quotaResetService.statusAt(ctx, now)
 	if err != nil {
-		return err
+		return result, err
 	}
+	result.applyStatus(status)
 	if status.ActiveSubscriptionCount == 0 {
-		return nil
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeNoActiveSubscriptions
+		return result, nil
 	}
 	if status.AutomaticResetReady {
 		if status.AutoResetEnabled && status.ActiveRound != nil {
-			return r.executeAutomaticReset(ctx, now, status.ActiveRound)
+			resetResult, resetErr := r.executeAutomaticReset(ctx, now, status.ActiveRound)
+			result.applyResetResult(resetResult)
+			if resetErr == nil {
+				result.Outcome = openAIOfficialQuotaResetCycleOutcomeAutomaticResetExecuted
+			}
+			return result, resetErr
 		}
-		return nil
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeReadyAutoResetDisabled
+		return result, nil
 	}
 	if status.ActiveRound == nil && status.EligibleAccountCount == 0 {
-		return nil
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeNoEligibleAccounts
+		return result, nil
 	}
 
 	candidates, err := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
 	if err != nil {
-		return err
+		return result, err
 	}
 	r.resetPeriodicProbeDetection()
 	defer r.resetPeriodicProbeDetection()
-	attempted := r.probeCandidateBatch(ctx, r.nextProbeCandidates(filterOpenAIQuotaResetRoundCandidates(candidates, status.ActiveRound)))
+	firstBatch := r.probeCandidateBatch(ctx, r.nextProbeCandidates(filterOpenAIQuotaResetRoundCandidates(candidates, status.ActiveRound)))
+	result.addProbeBatch(firstBatch)
 
 	refreshed, err := r.quotaResetService.statusAt(ctx, now)
 	if err != nil {
-		return err
+		return result, err
 	}
+	result.applyStatus(refreshed)
 	periodicDetection := r.consumePeriodicProbeDetection()
 	// A newly detected reset gets one bounded confirmation batch, excluding
 	// every account already attempted by this cycle.
@@ -219,26 +321,68 @@ func (r *OpenAIOfficialQuotaResetRunner) RunOnce(ctx context.Context) error {
 		!refreshed.AutomaticResetReady {
 		refreshedCandidates, candidateErr := r.tracker.ListEligibleOpenAIOfficial7dResetCandidates(ctx, now)
 		if candidateErr != nil {
-			return candidateErr
+			return result, candidateErr
 		}
-		additional := r.nextUnprobedCandidates(filterOpenAIQuotaResetRoundCandidates(refreshedCandidates, refreshed.ActiveRound), attempted)
+		additional := r.nextUnprobedCandidates(filterOpenAIQuotaResetRoundCandidates(refreshedCandidates, refreshed.ActiveRound), firstBatch.attempted)
 		if len(additional) > 0 {
-			r.probeCandidateBatch(ctx, additional)
+			result.addProbeBatch(r.probeCandidateBatch(ctx, additional))
 			refreshed, err = r.quotaResetService.statusAt(ctx, now)
 			if err != nil {
-				return err
+				return result, err
 			}
+			result.applyStatus(refreshed)
 		}
 	}
 	if refreshed.AutomaticResetReady && refreshed.AutoResetEnabled && refreshed.ActiveRound != nil {
-		return r.executeAutomaticReset(ctx, now, refreshed.ActiveRound)
+		resetResult, resetErr := r.executeAutomaticReset(ctx, now, refreshed.ActiveRound)
+		result.applyResetResult(resetResult)
+		if resetErr == nil {
+			result.Outcome = openAIOfficialQuotaResetCycleOutcomeAutomaticResetExecuted
+		}
+		return result, resetErr
 	}
-	return nil
+	if refreshed.AutomaticResetReady {
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeReadyAutoResetDisabled
+	} else if result.ProbeAttemptedCount == 0 {
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeNoUnconfirmedCandidates
+	} else {
+		result.Outcome = openAIOfficialQuotaResetCycleOutcomeProbed
+	}
+	return result, nil
 }
 
-func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Context, now time.Time, round *OpenAIOfficial7dResetRound) error {
+func (r *openAIOfficialQuotaResetCycleResult) applyStatus(status *AdminResetAllQuotaStatus) {
+	if r == nil || status == nil {
+		return
+	}
+	r.ActiveSubscriptionCount = status.ActiveSubscriptionCount
+	r.EligibleAccountCount = status.EligibleAccountCount
+	r.ConfirmationCount = status.ConfirmationCount
+	r.RequiredConfirmationCount = status.RequiredConfirmationCount
+	r.AutomaticResetReady = status.AutomaticResetReady
+	r.AutoResetEnabled = status.AutoResetEnabled
+}
+
+func (r *openAIOfficialQuotaResetCycleResult) addProbeBatch(batch openAIOfficialQuotaProbeBatchResult) {
+	if r == nil {
+		return
+	}
+	r.ProbeAttemptedCount += len(batch.attempted)
+	r.ProbeSucceededCount += batch.succeeded
+	r.ProbeFailedCount += batch.failed
+}
+
+func (r *openAIOfficialQuotaResetCycleResult) applyResetResult(result *AdminResetAllQuotaResult) {
+	if r == nil || result == nil {
+		return
+	}
+	r.ResetCount = result.ResetCount
+	r.ConsumedEventCount = result.ConsumedEventCount
+}
+
+func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Context, now time.Time, round *OpenAIOfficial7dResetRound) (*AdminResetAllQuotaResult, error) {
 	if round == nil || !round.Ready {
-		return ErrAutomaticQuotaResetPending
+		return nil, ErrAutomaticQuotaResetPending
 	}
 	confirmedAccountIDs := make([]int64, 0, len(round.ConfirmedEvents))
 	for _, event := range round.ConfirmedEvents {
@@ -246,7 +390,7 @@ func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Conte
 	}
 	result, err := r.quotaResetService.AutomaticResetAllQuota(ctx, round.Anchor)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r.recordAutomaticResetAudit(now, confirmedAccountIDs, result)
 	slog.Info("openai official quota reset executed",
@@ -254,7 +398,7 @@ func (r *OpenAIOfficialQuotaResetRunner) executeAutomaticReset(ctx context.Conte
 		"consumed_event_count", result.ConsumedEventCount,
 		"reset_count", result.ResetCount,
 	)
-	return nil
+	return result, nil
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) reconcileExpiredRounds(ctx context.Context, now time.Time) error {

@@ -172,6 +172,9 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 	if strings.Contains(component, "audit") {
 		return true
 	}
+	if component == openAIOfficialQuotaResetLogComponent {
+		return true
+	}
 	return false
 }
 

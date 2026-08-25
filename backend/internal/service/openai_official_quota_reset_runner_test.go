@@ -135,7 +135,7 @@ func newAutomaticResetRunnerTestService(
 		tracker,
 		&quotaResetAutomationSettingsStub{enabled: automationEnabled},
 	)
-	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, 5*time.Minute)
+	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, openAIOfficialQuotaResetCronSchedule)
 	runner.now = func() time.Time { return querier.now }
 	return runner, subRepo, quotaResetService
 }

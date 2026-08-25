@@ -162,7 +162,7 @@ func newQuotaProbeSwitchRunner(
 	}
 	subscriptionService := NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil)
 	quotaResetService := NewSubscriptionQuotaResetService(subscriptionService, tracker, settings)
-	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, 5*time.Minute)
+	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, openAIOfficialQuotaResetCronSchedule)
 	runner.now = func() time.Time { return now }
 	return runner, tracker, querier, settings, subRepo
 }

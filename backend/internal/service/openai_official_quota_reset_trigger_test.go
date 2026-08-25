@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const officialQuotaResetTestFarFutureSchedule = "0 0 1 1 *"
+
 type officialQuotaTriggerTrackerStub struct {
 	mu                  sync.Mutex
 	candidates          []OpenAIOfficial7dResetCandidate
@@ -219,7 +221,7 @@ func newOfficialQuotaTriggerHarness(
 	accountIDs []int64,
 	detectAccounts map[int64]bool,
 	autoResetEnabled bool,
-	interval time.Duration,
+	schedule string,
 ) *officialQuotaTriggerHarness {
 	now := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
 	candidates := make([]OpenAIOfficial7dResetCandidate, 0, len(accountIDs))
@@ -243,7 +245,7 @@ func newOfficialQuotaTriggerHarness(
 	}
 	subscriptionService := NewSubscriptionService(groupRepoNoop{}, subRepo, nil, nil, nil)
 	quotaResetService := NewSubscriptionQuotaResetService(subscriptionService, tracker, settings)
-	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, interval)
+	runner := NewOpenAIOfficialQuotaResetRunner(tracker, querier, quotaResetService, schedule)
 	runner.now = func() time.Time { return now }
 	observer.setDetectionNotifier(runner)
 	return &officialQuotaTriggerHarness{
@@ -309,21 +311,16 @@ func TestOpenAIOfficialQuotaResetTrigger_InvalidObservationAndNilHooksAreNoops(t
 	require.NoError(t, err)
 	require.False(t, detected)
 
-	var nilRunner *OpenAIOfficialQuotaResetRunner
-	require.Nil(t, nilRunner.immediateProbeWakeChannel())
-	require.Nil(t, (&OpenAIOfficialQuotaResetRunner{}).immediateProbeWakeChannel())
 }
 
-func TestOpenAIOfficialQuotaResetTrigger_CoalescesPassiveSourcesAndSeparatesPeriodicDetection(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness(nil, nil, false, time.Hour)
+func TestOpenAIOfficialQuotaResetTrigger_IgnoresPassiveSourcesAndTracksPeriodicDetection(t *testing.T) {
+	harness := newOfficialQuotaTriggerHarness(nil, nil, false, openAIOfficialQuotaResetCronSchedule)
 
 	harness.runner.notifyOpenAIOfficial7dResetDetected(OpenAIOfficial7dResetSourceGatewayHeader)
 	harness.runner.notifyOpenAIOfficial7dResetDetected(OpenAIOfficial7dResetSourceQuotaAPI)
-	require.Len(t, harness.runner.trigger.wake, 1)
 	require.False(t, harness.runner.consumePeriodicProbeDetection())
 
 	harness.runner.notifyOpenAIOfficial7dResetDetected(OpenAIOfficial7dResetSourcePeriodicProbe)
-	require.Len(t, harness.runner.trigger.wake, 1)
 	require.True(t, harness.runner.consumePeriodicProbeDetection())
 	require.False(t, harness.runner.consumePeriodicProbeDetection())
 
@@ -332,8 +329,8 @@ func TestOpenAIOfficialQuotaResetTrigger_CoalescesPassiveSourcesAndSeparatesPeri
 	(&OpenAIOfficialQuotaResetRunner{}).notifyOpenAIOfficial7dResetDetected(OpenAIOfficial7dResetSourceGatewayHeader)
 }
 
-func TestOpenAIOfficialQuotaResetTrigger_PassiveDetectionImmediatelyProbesThreeOtherAccounts(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5}, map[int64]bool{1: true}, false, time.Hour)
+func TestOpenAIOfficialQuotaResetTrigger_PassiveDetectionWaitsForNextCronCycle(t *testing.T) {
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5}, map[int64]bool{1: true}, false, officialQuotaResetTestFarFutureSchedule)
 	now := harness.querier.now
 
 	detected, err := observeOpenAIOfficial7dReset(
@@ -341,37 +338,19 @@ func TestOpenAIOfficialQuotaResetTrigger_PassiveDetectionImmediatelyProbesThreeO
 	)
 	require.NoError(t, err)
 	require.True(t, detected)
-	<-harness.runner.immediateProbeWakeChannel()
 
-	harness.runner.runTriggeredCycle()
+	harness.runner.Start()
+	t.Cleanup(harness.runner.Stop)
+	time.Sleep(25 * time.Millisecond)
+	require.Empty(t, harness.querier.queriedAccountIDs())
+
+	require.NoError(t, harness.runner.RunOnce(context.Background()))
 
 	require.Equal(t, []int64{2, 3, 4}, harness.querier.queriedAccountIDs())
 }
 
-func TestOpenAIOfficialQuotaResetTrigger_StaleOrFailedPendingCheckDoesNotProbe(t *testing.T) {
-	t.Run("stale", func(t *testing.T) {
-		harness := newOfficialQuotaTriggerHarness([]int64{1, 2}, nil, false, time.Hour)
-
-		harness.runner.runTriggeredCycle()
-
-		require.Empty(t, harness.querier.queriedAccountIDs())
-	})
-
-	t.Run("lookup failure", func(t *testing.T) {
-		harness := newOfficialQuotaTriggerHarness([]int64{1, 2}, nil, false, time.Hour)
-		harness.tracker.pendingErr = errors.New("pending lookup failed")
-
-		harness.runner.runTriggeredCycle()
-
-		require.Empty(t, harness.querier.queriedAccountIDs())
-	})
-
-	var nilRunner *OpenAIOfficialQuotaResetRunner
-	nilRunner.runTriggeredCycle()
-}
-
 func TestOpenAIOfficialQuotaResetTrigger_PeriodicBatchDoesNotRepeatAccountsWhenAllWereProbed(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3}, map[int64]bool{1: true}, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3}, map[int64]bool{1: true}, false, openAIOfficialQuotaResetCronSchedule)
 
 	require.NoError(t, harness.runner.RunOnce(context.Background()))
 
@@ -379,7 +358,7 @@ func TestOpenAIOfficialQuotaResetTrigger_PeriodicBatchDoesNotRepeatAccountsWhenA
 }
 
 func TestOpenAIOfficialQuotaResetTrigger_PeriodicDetectionAddsOneBoundedUnprobedBatch(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6, 7}, map[int64]bool{1: true}, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6, 7}, map[int64]bool{1: true}, false, openAIOfficialQuotaResetCronSchedule)
 
 	require.NoError(t, harness.runner.RunOnce(context.Background()))
 
@@ -387,7 +366,7 @@ func TestOpenAIOfficialQuotaResetTrigger_PeriodicDetectionAddsOneBoundedUnprobed
 }
 
 func TestOpenAIOfficialQuotaResetTrigger_PeriodicReadyBatchDoesNotAddProbeBatch(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true, 2: true}, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true, 2: true}, false, openAIOfficialQuotaResetCronSchedule)
 
 	require.NoError(t, harness.runner.RunOnce(context.Background()))
 
@@ -395,7 +374,7 @@ func TestOpenAIOfficialQuotaResetTrigger_PeriodicReadyBatchDoesNotAddProbeBatch(
 }
 
 func TestOpenAIOfficialQuotaResetTrigger_NoPeriodicDetectionDoesNotAddProbeBatch(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, nil, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, nil, false, openAIOfficialQuotaResetCronSchedule)
 
 	require.NoError(t, harness.runner.RunOnce(context.Background()))
 
@@ -403,7 +382,7 @@ func TestOpenAIOfficialQuotaResetTrigger_NoPeriodicDetectionDoesNotAddProbeBatch
 }
 
 func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchCandidateFailureStopsCycle(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true}, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true}, false, openAIOfficialQuotaResetCronSchedule)
 	harness.tracker.candidateErrCall = 4
 
 	err := harness.runner.RunOnce(context.Background())
@@ -413,7 +392,7 @@ func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchCandidateFailureStopsCyc
 }
 
 func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchStatusFailureStopsCycle(t *testing.T) {
-	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true}, false, time.Hour)
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4, 5, 6}, map[int64]bool{1: true}, false, openAIOfficialQuotaResetCronSchedule)
 	harness.tracker.pendingErr = errors.New("refreshed status failed")
 	harness.tracker.pendingErrCall = 4
 
@@ -423,39 +402,73 @@ func TestOpenAIOfficialQuotaResetTrigger_AdditionalBatchStatusFailureStopsCycle(
 	require.Equal(t, []int64{1, 2, 3, 4, 5, 6}, harness.querier.queriedAccountIDs())
 }
 
-func TestOpenAIOfficialQuotaResetTrigger_RunLoopHandlesTickerWakeAndStop(t *testing.T) {
-	t.Run("ticker", func(t *testing.T) {
-		harness := newOfficialQuotaTriggerHarness(nil, nil, false, 5*time.Millisecond)
-		harness.runner.Start()
-		t.Cleanup(harness.runner.Stop)
+func TestOpenAIOfficialQuotaResetCronSchedule_AlignsToFiveMinuteBoundaries(t *testing.T) {
+	schedule, err := openAIOfficialQuotaResetCronParser.Parse(openAIOfficialQuotaResetCronSchedule)
+	require.NoError(t, err)
 
-		require.Eventually(t, func() bool {
-			return harness.tracker.candidateCallCount() >= 2
-		}, time.Second, 5*time.Millisecond)
-	})
+	now := time.Date(2026, 8, 25, 22, 13, 27, 0, time.Local)
+	require.Equal(t, time.Date(2026, 8, 25, 22, 15, 0, 0, time.Local), schedule.Next(now))
+	require.Equal(t, time.Date(2026, 8, 25, 22, 20, 0, 0, time.Local), schedule.Next(schedule.Next(now)))
+}
 
-	t.Run("wake", func(t *testing.T) {
-		harness := newOfficialQuotaTriggerHarness(nil, nil, false, time.Hour)
-		harness.runner.Start()
-		t.Cleanup(harness.runner.Stop)
-		require.Eventually(t, func() bool {
-			return harness.tracker.candidateCallCount() >= 1
-		}, time.Second, 5*time.Millisecond)
-		harness.runner.runMutex.Lock()
-		harness.runner.runMutex.Unlock()
+func TestOpenAIOfficialQuotaResetCron_StartDoesNotRunImmediately(t *testing.T) {
+	harness := newOfficialQuotaTriggerHarness([]int64{1}, nil, false, officialQuotaResetTestFarFutureSchedule)
 
-		detectedAt := harness.querier.now
-		harness.tracker.setCandidates([]OpenAIOfficial7dResetCandidate{
-			{AccountID: 1, Pending: true, DetectedAt: &detectedAt},
-			{AccountID: 2},
-		})
-		harness.runner.notifyOpenAIOfficial7dResetDetected(OpenAIOfficial7dResetSourceGatewayHeader)
+	harness.runner.Start()
+	t.Cleanup(harness.runner.Stop)
+	time.Sleep(25 * time.Millisecond)
 
-		require.Eventually(t, func() bool {
-			return len(harness.querier.queriedAccountIDs()) == 1
-		}, time.Second, 5*time.Millisecond)
-		require.Equal(t, []int64{2}, harness.querier.queriedAccountIDs())
-	})
+	require.Zero(t, harness.tracker.candidateCallCount())
+}
+
+func TestOpenAIOfficialQuotaResetCycleResult_RecordsProbeCountsAndConfirmation(t *testing.T) {
+	harness := newOfficialQuotaTriggerHarness([]int64{1, 2, 3, 4}, map[int64]bool{1: true}, false, openAIOfficialQuotaResetCronSchedule)
+	harness.querier.fail[2] = errors.New("probe failed")
+
+	result, err := harness.runner.runOnce(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, openAIOfficialQuotaResetCycleOutcomeProbed, result.Outcome)
+	require.True(t, result.LeaderAcquired)
+	require.Equal(t, 4, result.ProbeAttemptedCount)
+	require.Equal(t, 3, result.ProbeSucceededCount)
+	require.Equal(t, 1, result.ProbeFailedCount)
+	require.Equal(t, 1, result.ConfirmationCount)
+	require.Equal(t, 2, result.RequiredConfirmationCount)
+	require.False(t, result.AutomaticResetReady)
+}
+
+func TestOpenAIOfficialQuotaResetCycleSummary_EmitsOperationalFields(t *testing.T) {
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+
+	harness := newOfficialQuotaTriggerHarness(nil, nil, false, openAIOfficialQuotaResetCronSchedule)
+	triggeredAt := time.Date(2026, 8, 25, 14, 15, 0, 0, time.UTC)
+	harness.runner.recordCycleSummary(triggeredAt, 1250*time.Millisecond, openAIOfficialQuotaResetCycleResult{
+		Outcome:                   openAIOfficialQuotaResetCycleOutcomeProbed,
+		LeaderAcquired:            true,
+		ActiveSubscriptionCount:   7,
+		EligibleAccountCount:      5,
+		ProbeAttemptedCount:       3,
+		ProbeSucceededCount:       2,
+		ProbeFailedCount:          1,
+		ConfirmationCount:         1,
+		RequiredConfirmationCount: 2,
+		AutomaticResetReady:       false,
+		AutoResetEnabled:          true,
+	}, nil)
+
+	require.True(t, logSink.ContainsMessageAtLevel("openai official quota reset cron cycle completed", "info"))
+	require.True(t, logSink.ContainsFieldValue("component", openAIOfficialQuotaResetLogComponent))
+	require.True(t, logSink.ContainsFieldValue("triggered_at", "2026-08-25T14:15:00Z"))
+	require.True(t, logSink.ContainsFieldValue("outcome", openAIOfficialQuotaResetCycleOutcomeProbed))
+	require.True(t, logSink.ContainsFieldValue("probe_attempted_count", "3"))
+	require.True(t, logSink.ContainsFieldValue("probe_succeeded_count", "2"))
+	require.True(t, logSink.ContainsFieldValue("probe_failed_count", "1"))
+	require.True(t, logSink.ContainsFieldValue("confirmation_count", "1"))
+	require.True(t, logSink.ContainsFieldValue("required_confirmation_count", "2"))
+	require.True(t, logSink.ContainsFieldValue("automatic_reset_ready", "false"))
+	require.True(t, logSink.ContainsFieldValue("duration_ms", "1250"))
 }
 
 func TestProvideOpenAIOfficialQuotaResetRunner_WiresDetectionNotifier(t *testing.T) {
@@ -464,6 +477,7 @@ func TestProvideOpenAIOfficialQuotaResetRunner_WiresDetectionNotifier(t *testing
 	t.Cleanup(runner.Stop)
 
 	observer.notifyDetection(OpenAIOfficial7dResetSourceGatewayHeader)
-
-	require.Len(t, runner.trigger.wake, 1)
+	require.False(t, runner.consumePeriodicProbeDetection())
+	observer.notifyDetection(OpenAIOfficial7dResetSourcePeriodicProbe)
+	require.True(t, runner.consumePeriodicProbeDetection())
 }

@@ -11,12 +11,11 @@ type openAIOfficial7dResetDetectionNotifier interface {
 }
 
 type openAIOfficialQuotaResetTrigger struct {
-	wake              chan struct{}
 	periodicDetection atomic.Bool
 }
 
 func newOpenAIOfficialQuotaResetTrigger() *openAIOfficialQuotaResetTrigger {
-	return &openAIOfficialQuotaResetTrigger{wake: make(chan struct{}, 1)}
+	return &openAIOfficialQuotaResetTrigger{}
 }
 
 func (o *OpenAIOfficial7dResetObserver) setDetectionNotifier(notifier openAIOfficial7dResetDetectionNotifier) {
@@ -37,23 +36,12 @@ func (r *OpenAIOfficialQuotaResetRunner) notifyOpenAIOfficial7dResetDetected(sou
 	if r == nil || r.trigger == nil {
 		return
 	}
-	if source == OpenAIOfficial7dResetSourcePeriodicProbe {
-		// The active RunOnce consumes this after its current batch; waking the
-		// loop here would schedule a duplicate cycle for the same observation.
-		r.trigger.periodicDetection.Store(true)
+	if source != OpenAIOfficial7dResetSourcePeriodicProbe {
 		return
 	}
-	select {
-	case r.trigger.wake <- struct{}{}:
-	default:
-	}
-}
-
-func (r *OpenAIOfficialQuotaResetRunner) immediateProbeWakeChannel() <-chan struct{} {
-	if r == nil || r.trigger == nil {
-		return nil
-	}
-	return r.trigger.wake
+	// The active cron cycle consumes this after its current batch. Passive
+	// observations wait for the next cron boundary instead of waking the runner.
+	r.trigger.periodicDetection.Store(true)
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) resetPeriodicProbeDetection() {
@@ -66,42 +54,32 @@ func (r *OpenAIOfficialQuotaResetRunner) consumePeriodicProbeDetection() bool {
 	return r != nil && r.trigger != nil && r.trigger.periodicDetection.Swap(false)
 }
 
-func (r *OpenAIOfficialQuotaResetRunner) runTriggeredCycle() {
-	if r == nil || r.tracker == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.ctx, openAIOfficialQuotaResetCycleTimeout)
-	defer cancel()
-	pending, err := r.tracker.ListPendingOpenAIOfficial7dResets(ctx)
-	if err != nil {
-		slog.Warn("openai official quota reset trigger pending lookup failed", "error", err)
-		return
-	}
-	if len(pending) == 0 {
-		return
-	}
-	if err := r.RunOnce(ctx); err != nil {
-		slog.Warn("openai official quota reset triggered cycle failed", "error", err)
-	}
+type openAIOfficialQuotaProbeBatchResult struct {
+	attempted map[int64]struct{}
+	succeeded int
+	failed    int
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) probeCandidateBatch(
 	ctx context.Context,
 	candidates []OpenAIOfficial7dResetCandidate,
-) map[int64]struct{} {
-	attempted := make(map[int64]struct{}, len(candidates))
+) openAIOfficialQuotaProbeBatchResult {
+	result := openAIOfficialQuotaProbeBatchResult{attempted: make(map[int64]struct{}, len(candidates))}
 	for _, candidate := range candidates {
 		accountID := candidate.AccountID
-		attempted[accountID] = struct{}{}
+		result.attempted[accountID] = struct{}{}
 		r.probeCursorAccountID = accountID
 		probeCtx, cancel := context.WithTimeout(ctx, openAIOfficialQuotaResetProbeTimeout)
 		_, probeErr := r.quotaQuerier.QueryUsageSnapshot(probeCtx, accountID)
 		cancel()
 		if probeErr != nil {
+			result.failed++
 			slog.Warn("openai official quota reset probe failed", "account_id", accountID, "error", probeErr)
+			continue
 		}
+		result.succeeded++
 	}
-	return attempted
+	return result
 }
 
 func (r *OpenAIOfficialQuotaResetRunner) nextUnprobedCandidates(

@@ -60,6 +60,20 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "openai official quota reset cycle component",
+			event: &logger.LogEvent{Level: "info", Component: openAIOfficialQuotaResetLogComponent},
+			want:  true,
+		},
+		{
+			name: "openai official quota reset component from fields",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "",
+				Fields:    map[string]any{"component": openAIOfficialQuotaResetLogComponent},
+			},
+			want: true,
+		},
+		{
 			name: "audit component from fields (real zap path)",
 			event: &logger.LogEvent{
 				Level:     "info",
