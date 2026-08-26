@@ -755,6 +755,9 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					if updates := buildCodexSparkWindowExtraUpdates(quotaUsage, now); len(updates) > 0 {
 						mergeAccountExtra(account, updates)
 						s.persistOpenAICodexProbeSnapshot(account.ID, updates)
+						if account.ParentAccountID != nil {
+							notifyOpenAIAutoReset(*account.ParentAccountID)
+						}
 						if usage.UpdatedAt == nil {
 							usage.UpdatedAt = &now
 						}
@@ -987,7 +990,9 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 				slog.Warn("openai official 7d reset probe observation failed", "account_id", accountID, "error", err)
 			}
 		}
-		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
+			notifyOpenAIAutoReset(accountID)
+		}
 	}()
 }
 
