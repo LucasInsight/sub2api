@@ -330,7 +330,7 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 
 	gpt56 := newConfiguredCodexModelDescriptor("gpt-5.6-sol")
 	require.Equal(t, "GPT-5.6 Sol", gpt56.DisplayName)
-	require.Equal(t, "OpenAI GPT coding model routed through Sub2API.", gpt56.Description)
+	require.Equal(t, "OpenAI GPT coding model.", gpt56.Description)
 	require.NotNil(t, gpt56.DefaultReasoningLevel)
 	require.Equal(t, "low", *gpt56.DefaultReasoningLevel)
 	require.Equal(t, configuredCodexGPTReasoningLevels("gpt-5.6-sol"), gpt56.SupportedReasoningLevels)
@@ -383,6 +383,53 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.NotEmpty(t, custom.ModelMessages.InstructionsTemplate)
 	require.Equal(t, "auto", custom.DefaultReasoningSummary)
 	require.Equal(t, configuredCodexTruncationPolicy{Mode: "bytes", Limit: 10_000}, custom.TruncationPolicy)
+}
+
+func TestBuildCodexModelsManifestUsesNeutralDescriptions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		modelID     string
+		description string
+	}{
+		{"gpt-5.6-sol", "OpenAI GPT coding model."},
+		{"claude-opus-4-6", "Claude coding and reasoning model."},
+		{"deepseek-v4-pro", "DeepSeek coding and reasoning model."},
+		{"grok-4.6", "Grok coding and reasoning model."},
+		{"company-coding-model", "Custom model."},
+	} {
+		t.Run(tc.modelID, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := BuildCodexModelsManifest([]string{tc.modelID})
+			require.NoError(t, err)
+			models := decodeCodexManifestModels(t, body)
+			require.Len(t, models, 1)
+			require.Equal(t, tc.modelID, models[0]["slug"])
+			require.Equal(t, tc.description, models[0]["description"])
+			require.NotContains(t, strings.ToLower(string(body)), "sub2api")
+		})
+	}
+}
+
+func TestBuildCodexModelsManifestPreservesUpstreamDescriptions(t *testing.T) {
+	t.Parallel()
+
+	const modelID = "gpt-5.6-sol"
+	for _, description := range []string{"Provider supplied description.", "Provider supplied Sub2API description."} {
+		t.Run(description, func(t *testing.T) {
+			t.Parallel()
+
+			metadata := map[string]codexModelMetadataOverride{
+				modelID: {UpstreamModelMetadata: UpstreamModelMetadata{ID: modelID, Description: description}},
+			}
+			body, err := buildCodexModelsManifest([]string{modelID}, nil, nil, metadata)
+			require.NoError(t, err)
+			models := decodeCodexManifestModels(t, body)
+			require.Len(t, models, 1)
+			require.Equal(t, description, models[0]["description"])
+		})
+	}
 }
 
 func effortsFromConfiguredCodexLevels(levels []configuredCodexReasoningLevel) []string {
@@ -857,7 +904,7 @@ func TestBuildCodexModelsManifestForGroupUsesMappedTargetMetadataForCompositeAli
 	require.Len(t, models, 1)
 	require.Equal(t, "reasoning-alias", models[0]["slug"])
 	require.Equal(t, "reasoning-alias", models[0]["display_name"])
-	require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
+	require.Equal(t, "Custom model.", models[0]["description"])
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromManifestModel(t, models[0]))
 }
 
@@ -899,7 +946,7 @@ func TestBuildCodexModelsManifestForGroupUsesSafeFallbackForConflictingAliasTarg
 	require.Len(t, models, 1)
 	require.Equal(t, "shared-alias", models[0]["slug"])
 	require.Equal(t, "shared-alias", models[0]["display_name"])
-	require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
+	require.Equal(t, "Custom model.", models[0]["description"])
 	require.Empty(t, effortsFromManifestModel(t, models[0]))
 }
 
